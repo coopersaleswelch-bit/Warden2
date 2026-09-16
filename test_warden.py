@@ -174,13 +174,49 @@ def test_arg_rules():
 
 def test_novel_arg_shape_flagged():
     e, _ = make_enforcer()
-    c = base_contract()
+    # additionalProperties: the tool genuinely accepts extra fields, so the
+    # schema-conformance rule does not apply and we are testing the behavioural
+    # envelope on its own.
+    c = base_contract(
+        input_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "additionalProperties": True,
+        }
+    )
     e.approve(c)
     for _ in range(3):
         e.check(c, {"query": "x"})
     d = e.check(c, {"query": "x", "surprise": "y"})
     check("novel argument shape is flagged after baseline",
           d.allowed and "novel_arg_shape" in d.flags, str(d.flags))
+
+
+def test_undeclared_argument_denied():
+    e, _ = make_enforcer()
+    c = base_contract()  # schema declares only "query"
+    e.approve(c)
+
+    d = e.check(c, {"query": "x"})
+    check("declared argument is allowed", d.allowed, d.reason)
+
+    d = e.check(c, {"query": "x", "command": "cat .env"})
+    check("argument outside the approved schema is denied",
+          not d.allowed and d.code == "UNDECLARED_ARG", d.code)
+    check("the denial names the offending argument", "command" in d.reason, d.reason)
+
+    # a tool that genuinely accepts extras must not be broken by this rule
+    open_c = base_contract(
+        server="open-mcp",
+        input_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "additionalProperties": True,
+        },
+    )
+    e.approve(open_c)
+    d = e.check(open_c, {"query": "x", "extra": "y"})
+    check("additionalProperties tools still accept extras", d.allowed, d.reason)
 
 
 def test_guard_actually_blocks():
@@ -296,6 +332,7 @@ def main() -> None:
         test_denied_scope,
         test_arg_rules,
         test_novel_arg_shape_flagged,
+        test_undeclared_argument_denied,
         test_guard_actually_blocks,
         test_audit_records_everything,
         test_mcp_tool_translation,

@@ -46,9 +46,10 @@ echo     1   Setup            install what Warden needs (run once)
 echo     2   Test             prove the code works (21 checks)
 echo     3   Attack demo      the rug-pull, caught
 echo     4   Live demo        same attack over a real MCP server
-echo     5   Report           open the evidence page in your browser
-echo     6   Text summary     same thing, in this window
-echo     7   Reset            wipe recorded history, keep the code
+echo     5   Upgrade demo     real updates pass, attacks still do not
+echo     6   Report           open the evidence page in your browser
+echo     7   Text summary     same thing, in this window
+echo     8   Reset            wipe recorded history, keep the code
 echo.
 echo     0   Quit
 echo.
@@ -59,9 +60,10 @@ if "%choice%"=="1" goto SETUP
 if "%choice%"=="2" goto TEST
 if "%choice%"=="3" goto DEMO
 if "%choice%"=="4" goto LIVE
-if "%choice%"=="5" goto REPORT
-if "%choice%"=="6" goto SUMMARY
-if "%choice%"=="7" goto RESET
+if "%choice%"=="5" goto DAY3
+if "%choice%"=="6" goto REPORT
+if "%choice%"=="7" goto SUMMARY
+if "%choice%"=="8" goto RESET
 if "%choice%"=="0" goto END
 goto MENU
 
@@ -108,6 +110,19 @@ echo   This launches a real MCP server, puts Warden in front of it, and
 echo   talks to it over the real protocol. Nothing here is faked.
 echo.
 !PY! demo_live_proxy.py
+echo.
+pause
+goto MENU
+
+:DAY3
+cls
+echo.
+echo   Four sessions against a real server:
+echo     - a genuine v1.1.0 release            should be ACCEPTED
+echo     - a swap hiding behind the same version should be CAUGHT
+echo     - a swap with an honest version bump    should be CAUGHT anyway
+echo.
+!PY! demo_day3.py
 echo.
 pause
 goto MENU

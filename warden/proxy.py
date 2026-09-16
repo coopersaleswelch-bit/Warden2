@@ -82,7 +82,10 @@ class WardenProxy:
         # request id -> method, so we know what a response is a response to
         self.pending: dict[Any, str] = {}
         self.lock = threading.Lock()
-        self.stats = {"forwarded": 0, "blocked": 0, "tools_seen": 0, "quarantined": 0}
+        self.stats = {
+            "forwarded": 0, "blocked": 0, "tools_seen": 0,
+            "quarantined": 0, "upgrades": 0,
+        }
 
     # ---------- plumbing ----------
 
@@ -176,6 +179,12 @@ class WardenProxy:
         with self.lock:
             method = self.pending.pop(msg_id, None)
 
+        if method == "initialize" and "result" in message:
+            info = message["result"].get("serverInfo") or {}
+            version = info.get("version")
+            state = self.enforcer.note_server_version(self.server_name, version)
+            log(f"server reports version {version} ({state})")
+
         if method == "tools/list" and "result" in message:
             self.inspect_tool_list(message["result"].get("tools") or [])
 
@@ -193,9 +202,8 @@ class WardenProxy:
 
         for tool in tools:
             contract = contract_from_mcp_tool(self.server_name, tool)
-            known = self.enforcer.registry.get_contract(self.server_name, contract.tool)
 
-            if known is None:
+            if not self.enforcer.registry.is_known(self.server_name, contract.tool):
                 if self.discover:
                     self.enforcer.approve(contract, reason="discovery mode auto-pin")
                     log(f"pinned {contract.tool} ({contract.short_fingerprint()})")
@@ -203,33 +211,18 @@ class WardenProxy:
                     log(f"UNAPPROVED tool advertised: {contract.tool}")
                 continue
 
-            if known.fingerprint() != contract.fingerprint():
-                from .contracts import diff_contracts, summarize_drift
+            decision = self.enforcer.verify_advertised(contract)
+            if decision is None:
+                continue
 
-                changes = diff_contracts(known, contract)
-                summary = summarize_drift(changes)
-                action = self.enforcer.policy.default("on_drift")
-
-                if action in ("quarantine", "block"):
-                    if action == "quarantine":
-                        self.enforcer.registry.quarantine(
-                            self.server_name, contract.tool, f"contract drift: {summary}"
-                        )
-                    self.stats["quarantined"] += 1
-                    log(f"DRIFT DETECTED on {contract.tool}: {summary}")
-
-                self.enforcer.audit.record(
-                    session=self.enforcer.session,
-                    agent="proxy-inspection",
-                    server=self.server_name,
-                    tool=contract.tool,
-                    allowed=False,
-                    code="CONTRACT_DRIFT_ADVERTISED",
-                    reason=f"server advertised a changed contract ({summary})",
-                    args={},
-                    fingerprint=contract.short_fingerprint(),
-                    drift=changes,
-                )
+            if decision.code == "VERSION_UPGRADE_ACCEPTED":
+                self.stats["upgrades"] += 1
+                log(f"UPGRADE ACCEPTED on {contract.tool}: {decision.reason}")
+            elif not decision.allowed:
+                self.stats["quarantined"] += 1
+                log(f"{decision.code} on {contract.tool}: {decision.reason}")
+            else:
+                log(f"drift flagged on {contract.tool}: {decision.reason}")
 
     # ---------- run loops ----------
 
@@ -284,7 +277,8 @@ class WardenProxy:
         log(
             f"session ended — forwarded={self.stats['forwarded']} "
             f"blocked={self.stats['blocked']} "
-            f"quarantined={self.stats['quarantined']}"
+            f"quarantined={self.stats['quarantined']} "
+            f"upgrades_accepted={self.stats['upgrades']}"
         )
 
 

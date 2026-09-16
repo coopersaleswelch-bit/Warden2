@@ -91,17 +91,81 @@ project. It has not touched a third-party MCP server in the wild.
 
 ---
 
-## Day 3 — (not yet)
+## Day 3 — 16 September 2026
+
+**Solved the problem that would have got Warden uninstalled.**
+
+Day 2 treated every contract change as an attack. That is correct and unusable:
+a vendor ships v1.1.0, rewords a description, and Warden quarantines a working
+tool. Do that twice and the security team switches it off.
+
+The fix is to stop asking "did this change" and start asking two better
+questions: **did the tool gain power**, and **did the server admit to changing**.
+
+Shipped:
+
+- `warden/classify.py` — classifies a diff as ELEVATION, BENIGN or AMBIGUOUS.
+  Elevation means a new permission, a new input field named like a command or a
+  credential, or a description that grew an instruction (the tool-poisoning
+  surface: a description is prompt context, so text added there is text injected
+  into the agent). No model call, no probability — string and set operations
+  over a diff, so an engineer can read the reason and check it by hand.
+- **Server version awareness.** The proxy captures `serverInfo.version` from the
+  `initialize` handshake and the registry remembers it. This produces the
+  strongest signal Warden has: a server that changes its tools while still
+  reporting the same version is contradicting its own identity. That is not a
+  judgment call, it is a contradiction, and it is the Deadbugz signature.
+- **The decision matrix:**
+
+  | version | diff | action |
+  |---|---|---|
+  | unchanged | anything | quarantine — silent mutation |
+  | bumped | elevation | quarantine |
+  | bumped | benign or ambiguous | auto re-pin, no human |
+  | unknown | classify, fall back to policy | |
+
+- **Schema conformance** (`on_undeclared_arg`) — an argument the approved schema
+  never declared is not something the tool was approved to receive. This closes
+  the path where a poisoned description smuggles a payload through while the
+  schema still looks clean.
+- `mock_server` gained `--behaviour honest|upgraded|hostile` and `--version`, so
+  a genuine release can be tested alongside the attack.
+- `demo_day3.py` — four real sessions proving all three outcomes.
+- Tests: 30 to 34.
+
+**Two bugs found by running it rather than by reading it:**
+
+1. The demo looked like it passed while the poison never shipped. Root cause was
+   in the mock, not in Warden: hostile mode served v1.0.16 tool shapes while
+   claiming v1.1.0, so Warden caught it for being incoherent rather than for
+   being malicious. That quarantined `list_notes`, which blocked a call, which
+   kept the mutation counter below its threshold. A weaker test that happened to
+   go green. The mock now serves the baseline matching the version it claims.
+2. `list_notes` was quarantined during the *legitimate* upgrade — exactly the
+   false positive this day was meant to fix. Its description grew three words,
+   which classified as AMBIGUOUS, which fell back to quarantine. Fixed by making
+   elevation the gate: on a declared version bump, ambiguous changes are
+   accepted. Changelogs reword things.
+
+**Proved today:** a real v1.1.0 release passed with nobody paged. A swap hiding
+behind an unchanged version was caught. A swap carrying an honest version bump
+was caught anyway.
+
+**Not done yet:** Warden still has not touched a third-party MCP server in the
+wild. Everything so far has been tested against a server written for this
+project, which means the tests are only as adversarial as I remembered to be.
+
+---
+
+## Day 4 — (not yet)
 
 Planned:
-1. Point Warden at a real third-party MCP server and see what breaks. Real
-   servers will have quirks this mock does not — batched responses, notifications
-   mid-stream, tools that change legitimately between versions.
-2. Handle legitimate version changes: a server upgrade is not an attack, and if
-   Warden quarantines on every routine update nobody will keep it installed.
-   Probably a signed-manifest or version-pinning escape hatch.
-3. Config generator: output the exact JSON snippet to drop Warden into a Claude
-   Desktop or other MCP client config, so installing it is copy-paste.
+1. Point Warden at a real public MCP server. Expect breakage: batched responses,
+   notifications mid-stream, tools that legitimately change shape per request.
+2. Config generator — output the exact JSON snippet to drop Warden into a Claude
+   Desktop config, so installing it is copy-paste rather than a command line.
+3. Decide what the demo is. The report page is close, but the story a security
+   team needs to see in 90 seconds is not yet one screen.
 
 ---
 

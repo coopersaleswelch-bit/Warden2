@@ -11,11 +11,41 @@ defaults:
   #   allow - permit it (discovery mode only)
   unknown_tool: deny
 
-  # What to do when a tool's live contract no longer matches what we pinned.
+  # Fallback for any drift case not covered by the specific keys below.
   #   quarantine - deny this call AND every future call until a human re-approves
   #   block      - deny this call only
   #   warn       - allow but flag (use during rollout, never in production)
   on_drift: quarantine
+
+  # Risk-aware drift handling.
+  #
+  # Warden classifies every contract change by whether the tool GAINED POWER,
+  # and cross-references it against the version the server declares at
+  # initialize. Treating all change as attack means quarantining every routine
+  # software update, which is the same thing as being switched off.
+  #
+  #   elevation       - new permission, new sensitive input field, or a
+  #                     description that grew an instruction. Always hostile.
+  #   silent mutation - the contract changed but the server still reports the
+  #                     same version. The server is contradicting itself.
+  #   benign          - strictly less capable: fields removed, scopes given up.
+  #   ambiguous       - neither clearly safe nor clearly escalating.
+  on_elevation: quarantine
+  on_silent_mutation: quarantine
+  # Leave these unset to fall back to on_drift above.
+  # on_benign_drift: warn
+  # on_ambiguous_drift: warn
+
+  # When the server declares a NEW version and nothing escalated, accept the new
+  # contract automatically. This is what stops a Tuesday release from paging a
+  # human. A version bump is not a free pass: elevation is still quarantined.
+  auto_repin_on_version_bump: true
+
+  # An argument the approved input schema never declared is, by definition, not
+  # something the tool was approved to receive. It is also how a poisoned
+  # description smuggles a payload past a schema that still looks clean.
+  #   deny | warn | allow
+  on_undeclared_arg: deny
 
   # What to do when a tool is called with an argument shape never seen before.
   #   deny | warn | allow

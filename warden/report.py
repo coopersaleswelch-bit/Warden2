@@ -267,7 +267,12 @@ def build_html(registry: ContractRegistry, audit: AuditLog) -> str:
     entries = ""
     for row in decisions:
         cls = "allowed" if row["allowed"] else "denied"
-        verdict = "Allowed" if row["allowed"] else "Refused"
+        if row["code"] == "VERSION_UPGRADE_ACCEPTED":
+            verdict = "Upgrade accepted"
+        elif row["code"] == "SILENT_MUTATION":
+            verdict = "Refused - silent mutation"
+        else:
+            verdict = "Allowed" if row["allowed"] else "Refused"
         args = row["args"]
         entries += (
             f'<div class="entry {cls}">'

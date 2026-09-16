@@ -45,6 +45,24 @@ agent  ──▶  Warden  ──▶  MCP tool
 A denied call does not execute. Not "the model was told not to" — the function
 body never runs.
 
+## Not all change is attack
+
+Treating every contract change as hostile means quarantining every routine
+software update, which is the same thing as being switched off. Warden asks two
+questions instead: did the tool **gain power**, and did the server **admit to
+changing**.
+
+| Server version | What changed | Action |
+|---|---|---|
+| unchanged | anything | Quarantine — the server is contradicting itself |
+| bumped | elevation | Quarantine |
+| bumped | benign or ambiguous | Accepted automatically, no human |
+| unknown | classified, falls back to policy | |
+
+Elevation means a new permission, a new input field named like a command or a
+credential, or a description that grew an instruction. A description is prompt
+context, so text added there is text injected into the agent.
+
 ## Why quarantine matters
 
 Blocking one bad call is a guardrail. Quarantining the tool until a human
@@ -84,13 +102,23 @@ The real thing: a real MCP client, the Warden proxy, and a real MCP server,
 all talking JSON-RPC over pipes. The server behaves for three calls, then
 swaps a tool. Warden catches it at the moment it's advertised.
 
+## Run the upgrade demo
+
+```
+python demo_day3.py
+```
+
+Four sessions against a real server: a genuine v1.1.0 release is accepted with
+nobody paged, a swap hiding behind an unchanged version is caught, and a swap
+carrying an honest version bump is caught anyway.
+
 ## Run the tests
 
 ```
 python test_warden.py
 ```
 
-30 checks across the enforcement rules and the proxy layer. If this fails,
+34 checks across the enforcement rules, the classifier and the proxy layer. If this fails,
 don't commit.
 
 ## Open the evidence report
@@ -117,7 +145,13 @@ Python.
 | Setting | Options | Meaning |
 |---|---|---|
 | `unknown_tool` | `deny` / `allow` | tool that was never approved |
-| `on_drift` | `quarantine` / `block` / `warn` | contract no longer matches |
+| `on_drift` | `quarantine` / `block` / `warn` | fallback for any drift case below |
+| `on_elevation` | `quarantine` / `block` / `warn` | the tool gained power |
+| `on_silent_mutation` | `quarantine` / `block` / `warn` | changed without declaring a version |
+| `on_benign_drift` | unset, or an action | strictly less capable |
+| `on_ambiguous_drift` | unset, or an action | neither safe nor escalating |
+| `auto_repin_on_version_bump` | `true` / `false` | accept declared upgrades that gained nothing |
+| `on_undeclared_arg` | `deny` / `warn` / `allow` | argument not in the approved schema |
 | `on_novel_arg_shape` | `deny` / `warn` / `allow` | never-seen argument shape |
 | `baseline_calls` | integer | calls before the baseline is trusted |
 | `denied_scopes` | list | scopes no tool may ever declare |
@@ -150,6 +184,7 @@ except WardenDenied as e:
 | `warden/enforcer.py` | the decision engine and `guard()` |
 | `warden/audit.py` | the evidence log |
 | `policy.yaml` | the rules |
+| `warden/classify.py` | judges whether a change gained power |
 | `warden/proxy.py` | the MCP stdio proxy — Warden inline on real traffic |
 | `warden/report.py` | the HTML evidence register |
 | `mock_server/notes_server.py` | a deliberately hostile MCP server, for testing |
@@ -169,7 +204,10 @@ Run once with `--discover` to pin the server's current tools. Then drop the
 
 ## Status
 
-Day 2. The enforcement core and the inline proxy both work, with 30 tests
-passing. Warden has not yet been run against a third-party MCP server in the
-wild — that's Day 3, along with handling legitimate version upgrades so routine
-updates don't trigger a quarantine.
+Day 3. Enforcement core, inline proxy, and risk-aware drift handling all work,
+with 34 tests passing. Routine upgrades no longer trigger a quarantine.
+
+Warden has still not been run against a third-party MCP server in the wild. That
+is Day 4, and it is the honest gap: every test so far is against a server
+written for this project, so the tests are only as adversarial as I remembered
+to be.

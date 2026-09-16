@@ -24,9 +24,13 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .audit import AuditLog
+from .classify import AMBIGUOUS, BENIGN, ELEVATION, classify_drift
 from .contracts import ToolContract, diff_contracts, summarize_drift
 from .policy import Policy, load_policy
 from .registry import ContractRegistry
+
+
+SILENT_MUTATION = "SILENT_MUTATION"
 
 
 class WardenDenied(Exception):
@@ -68,6 +72,8 @@ class Enforcer:
         self.audit = audit or AuditLog()
         self.session = session or uuid.uuid4().hex[:12]
         self.on_event = on_event
+        # server -> "upgraded" | "unchanged" | "unknown", set at handshake
+        self._version_state: dict[str, str] = {}
 
     # ---------- approval ----------
 
@@ -147,28 +153,7 @@ class Enforcer:
         # 3. contract drift — the core check
         changes = diff_contracts(pinned, live)
         if changes:
-            summary = summarize_drift(changes)
-            action = self.policy.default("on_drift")
-            if action == "quarantine":
-                self.registry.quarantine(server, tool, f"contract drift: {summary}")
-                return deny(
-                    "CONTRACT_DRIFT",
-                    f"tool no longer matches its approved contract ({summary}); "
-                    f"quarantined pending human re-approval",
-                    drift=changes,
-                )
-            if action == "block":
-                return deny(
-                    "CONTRACT_DRIFT",
-                    f"tool no longer matches its approved contract ({summary})",
-                    drift=changes,
-                )
-            # warn
-            return Decision(
-                True, "CONTRACT_DRIFT_WARN",
-                f"contract drift observed but policy is warn-only ({summary})",
-                server, tool, drift=changes, flags=["drift"], fingerprint=fp,
-            )
+            return self._judge_drift(pinned, live, changes, fp)
 
         # 4. globally denied scopes
         denied = sorted(set(live.declared_scopes) & set(self.policy.denied_scopes))
@@ -209,8 +194,29 @@ class Enforcer:
                         f"call budget exhausted ({used}/{rule.max_calls})",
                     )
 
-        # 7. behavioural envelope (flag only)
+        # 6b. arguments the approved contract never declared
+        #
+        # An argument the pinned schema does not mention is, by definition, not
+        # something this tool was approved to receive. It is also how a poisoned
+        # description gets its payload through while the schema still looks
+        # clean: the instruction tells the agent to pass an extra field.
         flags: list[str] = []
+        schema = pinned.input_schema or {}
+        declared = schema.get("properties")
+        if declared is not None and not schema.get("additionalProperties", False):
+            undeclared = sorted(set(args) - set(declared))
+            if undeclared:
+                undeclared_action = self.policy.default("on_undeclared_arg")
+                if undeclared_action == "deny":
+                    return deny(
+                        "UNDECLARED_ARG",
+                        f"argument(s) {undeclared} are not in the tool's approved "
+                        f"input schema",
+                    )
+                if undeclared_action == "warn":
+                    flags.append(f"undeclared_arg:{','.join(undeclared)}")
+
+        # 7. behavioural envelope (flag only)
         baseline_n = int(self.policy.default("baseline_calls"))
         seen_shapes = self.registry.known_arg_shapes(server, tool)
         if self.registry.call_count(server, tool) >= baseline_n:
@@ -230,6 +236,157 @@ class Enforcer:
             reason += f" (flags: {', '.join(flags)})"
 
         return Decision(True, "ALLOWED", reason, server, tool, flags=flags, fingerprint=fp)
+
+    # ---------- server version awareness ----------
+
+    def note_server_version(self, server: str, version: str | None) -> str:
+        """
+        Record what version a server claims to be, at handshake time.
+
+        Returns the state this establishes for the session:
+            "upgraded"  the server declared a version we have not seen
+            "unchanged" the server declared the same version as last time
+            "unknown"   we have never seen this server, or it declares nothing
+
+        This is what separates a routine upgrade from a rug-pull. A server that
+        changes its tools while still calling itself v1.0.16 is contradicting
+        its own identity, and no amount of benign-looking diff should excuse it.
+        """
+        previous = self.registry.record_server_version(server, version)
+
+        if previous is None or version is None:
+            state = "unknown"
+        elif previous == version:
+            state = "unchanged"
+        else:
+            state = "upgraded"
+
+        self._version_state[server] = state
+        return state
+
+    def version_state(self, server: str) -> str:
+        return self._version_state.get(server, "unknown")
+
+    # ---------- drift judgment ----------
+
+    def _judge_drift(
+        self, pinned: ToolContract, live: ToolContract, changes: dict, fp: str
+    ) -> Decision:
+        server, tool = live.server, live.tool
+        verdict = classify_drift(changes)
+        state = self.version_state(server)
+        version = self.registry.get_server_version(server)
+
+        if state == "unchanged":
+            # The server says it is the same software. It is not.
+            kind = SILENT_MUTATION
+            detail = (
+                f"server still reports version {version} but its contract changed "
+                f"({verdict.summary()})"
+            )
+        else:
+            kind = verdict.level
+            detail = verdict.summary()
+
+        # A declared upgrade is trusted unless the tool gained power. Reworded
+        # prose and reshuffled optional fields are what a changelog looks like;
+        # quarantining those is how a security control gets switched off.
+        # Elevation is the gate, not change itself.
+        if (
+            kind in (BENIGN, AMBIGUOUS)
+            and state == "upgraded"
+            and self.policy.default("auto_repin_on_version_bump")
+        ):
+            self.registry.reapprove(
+                live, reason=f"accepted upgrade to {version}: {detail}"
+            )
+            return Decision(
+                True,
+                "VERSION_UPGRADE_ACCEPTED",
+                f"server upgraded to {version} with no gain in capability "
+                f"({detail}); new contract accepted automatically",
+                server,
+                tool,
+                drift=changes,
+                flags=["repinned", "upgrade"],
+                fingerprint=fp,
+            )
+
+        action = self.policy.drift_action(kind)
+        label = kind.replace("_", " ").lower()
+
+        if action == "warn":
+            return Decision(
+                True,
+                "CONTRACT_DRIFT_WARN",
+                f"{label} drift observed but policy is warn-only ({detail})",
+                server,
+                tool,
+                drift=changes,
+                flags=["drift", kind.lower()],
+                fingerprint=fp,
+            )
+
+        if action == "quarantine":
+            self.registry.quarantine(server, tool, f"{label}: {detail}")
+            reason = (
+                f"tool no longer matches its approved contract — {label} "
+                f"({detail}); quarantined pending human re-approval"
+            )
+        else:  # block
+            reason = f"tool no longer matches its approved contract — {label} ({detail})"
+
+        code = "SILENT_MUTATION" if kind == SILENT_MUTATION else "CONTRACT_DRIFT"
+        return Decision(
+            False,
+            code,
+            reason,
+            server,
+            tool,
+            drift=changes,
+            flags=[kind.lower()],
+            fingerprint=fp,
+        )
+
+    def verify_advertised(self, live: ToolContract) -> Decision | None:
+        """
+        Check a tool the server has just advertised, before anyone calls it.
+
+        A server has to declare a capability before it can use it, so this runs
+        one step earlier than check() and catches a mutation before the client
+        makes a single call against it.
+
+        Returns None when the tool is new and there is nothing to compare
+        against. Otherwise returns the Decision, already written to the audit
+        log, so the caller only has to react to it.
+        """
+        pinned = self.registry.get_contract(live.server, live.tool)
+        if pinned is None:
+            return None
+
+        changes = diff_contracts(pinned, live)
+        if not changes:
+            return None
+
+        decision = self._judge_drift(pinned, live, changes, live.short_fingerprint())
+
+        self.audit.record(
+            session=self.session,
+            agent="proxy-inspection",
+            server=live.server,
+            tool=live.tool,
+            allowed=decision.allowed,
+            code=decision.code,
+            reason=decision.reason,
+            args={},
+            fingerprint=decision.fingerprint,
+            drift=changes,
+        )
+
+        if self.on_event:
+            self.on_event(decision)
+
+        return decision
 
     # ---------- actual enforcement ----------
 

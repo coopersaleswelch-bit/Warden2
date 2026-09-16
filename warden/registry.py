@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS baselines (
     seen_count  INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (key, arg_keys)
 );
+
+CREATE TABLE IF NOT EXISTS servers (
+    server      TEXT PRIMARY KEY,
+    version     TEXT,
+    first_seen  REAL NOT NULL,
+    last_seen   REAL NOT NULL
+);
 """
 
 
@@ -130,6 +137,45 @@ class ContractRegistry:
     def reapprove(self, contract: ToolContract, reason: str = "human re-approval") -> None:
         """Explicit human action: accept the new contract as the new reference."""
         self.pin(contract, reason=reason)
+
+    # ---------- server version ----------
+
+    def record_server_version(self, server: str, version: str | None) -> str | None:
+        """
+        Remember what version a server says it is. Returns the version we had
+        on record BEFORE this call, so the caller can tell an upgrade from a
+        silent swap.
+
+        A server that changes its tools without changing its version is
+        contradicting itself, and that is the single strongest signal Warden
+        has. Nothing about it is heuristic.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT version FROM servers WHERE server = ?", (server,)
+            ).fetchone()
+            previous = row["version"] if row else None
+
+            now = time.time()
+            self._conn.execute(
+                """
+                INSERT INTO servers (server, version, first_seen, last_seen)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(server) DO UPDATE SET
+                    version = excluded.version,
+                    last_seen = excluded.last_seen
+                """,
+                (server, version, now, now),
+            )
+            self._conn.commit()
+
+        return previous
+
+    def get_server_version(self, server: str) -> str | None:
+        row = self._exec(
+            "SELECT version FROM servers WHERE server = ?", (server,)
+        ).fetchone()
+        return row["version"] if row else None
 
     # ---------- behavioural baseline ----------
 
