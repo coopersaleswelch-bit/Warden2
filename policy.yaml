@@ -1,0 +1,52 @@
+# Warden 2.0 policy
+#
+# Edit this file to change what agents are allowed to do.
+# No Python changes required. Restart is not required for a fresh Enforcer.
+
+version: 1
+
+defaults:
+  # What to do when an agent calls a tool that was never approved.
+  #   deny  - block it (recommended)
+  #   allow - permit it (discovery mode only)
+  unknown_tool: deny
+
+  # What to do when a tool's live contract no longer matches what we pinned.
+  #   quarantine - deny this call AND every future call until a human re-approves
+  #   block      - deny this call only
+  #   warn       - allow but flag (use during rollout, never in production)
+  on_drift: quarantine
+
+  # What to do when a tool is called with an argument shape never seen before.
+  #   deny | warn | allow
+  on_novel_arg_shape: warn
+
+  # How many successful calls before the argument-shape baseline is trusted.
+  baseline_calls: 3
+
+# Scopes no tool may ever declare, regardless of who published it.
+denied_scopes:
+  - shell.exec
+  - process.spawn
+  - credentials.read
+  - network.raw
+
+# Per-tool rules.
+tools:
+  - server: notes-mcp
+    tool: search_notes
+    deny_arg_contains:
+      query: [".env", "id_rsa", "password", "secret_key"]
+    max_calls: 500
+
+  - server: notes-mcp
+    tool: list_notes
+    max_calls: 500
+
+  - server: filesystem-mcp
+    tool: read_file
+    allow_arg_prefixes:
+      path: ["/workspace/", "./data/"]
+    deny_arg_contains:
+      path: [".env", ".ssh", "id_rsa", "credentials", ".aws"]
+    max_calls: 200

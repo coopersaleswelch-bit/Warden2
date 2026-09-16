@@ -1,0 +1,174 @@
+@echo off
+setlocal enabledelayedexpansion
+cd /d "%~dp0"
+chcp 65001 >nul 2>nul
+title Warden 2.0
+color 0F
+
+REM ---------------------------------------------------------------------
+REM  Find a working Python. Tries the three names Windows might have.
+REM  "where python" is not enough - the Microsoft Store ships a fake stub
+REM  that answers to the name but fails on the first real command, so we
+REM  actually run something trivial and check it worked.
+REM ---------------------------------------------------------------------
+
+set "PY="
+
+python -c "import sys" >nul 2>nul
+if !errorlevel!==0 set "PY=python"
+
+if not defined PY (
+  py -3 -c "import sys" >nul 2>nul
+  if !errorlevel!==0 set "PY=py -3"
+)
+
+if not defined PY (
+  python3 -c "import sys" >nul 2>nul
+  if !errorlevel!==0 set "PY=python3"
+)
+
+if not defined PY goto NOPYTHON
+
+:MENU
+cls
+echo.
+echo   ==========================================================
+echo     WARDEN 2.0
+echo     Tool contract enforcement for MCP
+echo   ==========================================================
+echo.
+echo     Folder : %CD%
+echo     Python : !PY!
+echo.
+echo   ----------------------------------------------------------
+echo.
+echo     1   Setup            install what Warden needs (run once)
+echo     2   Test             prove the code works (21 checks)
+echo     3   Attack demo      the rug-pull, caught
+echo     4   Live demo        same attack over a real MCP server
+echo     5   Report           open the evidence page in your browser
+echo     6   Text summary     same thing, in this window
+echo     7   Reset            wipe recorded history, keep the code
+echo.
+echo     0   Quit
+echo.
+set "choice="
+set /p choice=  Type a number and press Enter:  
+
+if "%choice%"=="1" goto SETUP
+if "%choice%"=="2" goto TEST
+if "%choice%"=="3" goto DEMO
+if "%choice%"=="4" goto LIVE
+if "%choice%"=="5" goto REPORT
+if "%choice%"=="6" goto SUMMARY
+if "%choice%"=="7" goto RESET
+if "%choice%"=="0" goto END
+goto MENU
+
+:SETUP
+cls
+echo.
+echo   Installing PyYAML, the only thing Warden needs.
+echo.
+!PY! -m pip install -r requirements.txt
+echo.
+if !errorlevel!==0 (
+  echo   Done. You can go straight to option 2 now.
+) else (
+  echo   That did not work. Screenshot this window and send it to Claude.
+)
+echo.
+pause
+goto MENU
+
+:TEST
+cls
+echo.
+!PY! test_warden.py
+echo.
+echo   Looking for "21 passed, 0 failed" above.
+echo.
+pause
+goto MENU
+
+:DEMO
+cls
+echo.
+!PY! demo_deadbugz.py
+echo.
+echo   The important part is STEP 3, where the tool changes and gets caught.
+echo.
+pause
+goto MENU
+
+:LIVE
+cls
+echo.
+echo   This launches a real MCP server, puts Warden in front of it, and
+echo   talks to it over the real protocol. Nothing here is faked.
+echo.
+!PY! demo_live_proxy.py
+echo.
+pause
+goto MENU
+
+:REPORT
+cls
+echo.
+echo   Building the report and opening it in your browser.
+echo.
+!PY! -m warden.report
+echo.
+echo   If nothing opened, the file is warden_report.html in this folder.
+echo.
+pause
+goto MENU
+
+:SUMMARY
+cls
+echo.
+!PY! summary.py
+echo.
+pause
+goto MENU
+
+:RESET
+cls
+echo.
+echo   This deletes the recorded decisions and approved contracts.
+echo   Your code is untouched. The demos rebuild everything from scratch.
+echo.
+set "sure="
+set /p sure=  Type YES to confirm:  
+if /i not "%sure%"=="YES" goto MENU
+del /q warden_registry.db warden_audit.db warden_report.html warden_proxy.log 2>nul
+echo.
+echo   Cleared.
+echo.
+pause
+goto MENU
+
+:NOPYTHON
+cls
+echo.
+echo   ==========================================================
+echo     Python is not installed, or Windows cannot find it.
+echo   ==========================================================
+echo.
+echo   Warden needs Python 3.10 or newer.
+echo.
+echo   1. Go to  https://www.python.org/downloads/
+echo   2. Click the big yellow "Download Python" button.
+echo   3. Run the installer.
+echo   4. IMPORTANT: on the first screen, tick the box that says
+echo      "Add python.exe to PATH" before clicking Install.
+echo      Almost everyone misses this and then nothing works.
+echo   5. Close this window and double-click START WARDEN again.
+echo.
+pause
+start https://www.python.org/downloads/
+goto END
+
+:END
+endlocal
+exit /b 0

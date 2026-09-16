@@ -1,0 +1,20 @@
+# Databases — local state, never commit
+*.db
+warden_registry.db
+warden_audit.db
+
+# Secrets — never commit, ever
+.env
+.env.*
+*.key
+secrets.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Generated report
+warden_report.html
+warden_proxy.log

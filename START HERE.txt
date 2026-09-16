@@ -1,0 +1,82 @@
+WARDEN 2.0 - START HERE
+=======================
+
+You do not need to use Command Prompt. You do not need to type any commands.
+
+
+WHAT TO DO
+----------
+
+1. Double-click the file called:   START WARDEN.bat
+
+2. If Windows shows a blue box saying "Windows protected your PC":
+   - Click the small "More info" link
+   - Click the "Run anyway" button that appears
+
+   This happens to every .bat file downloaded from the internet. It is not a
+   virus warning. Windows shows it for any script it did not see you write.
+
+3. A black window opens with a numbered menu.
+
+4. Type  1  and press Enter. This installs the one thing Warden needs.
+   Wait for it to finish.
+
+5. Type  2  and press Enter. This runs the tests.
+   You want to see:  21 passed, 0 failed
+
+6. Type  4  and press Enter. This is the good one - it runs the real attack
+   against a real server with Warden in the middle.
+
+7. Type  5  and press Enter. This opens a report in your browser showing
+   what Warden caught.
+
+That is the whole thing.
+
+
+IF SOMETHING GOES WRONG
+-----------------------
+
+Screenshot the black window and send it to Claude. Do not try to fix it by
+moving files around - the folder works as-is wherever it sits, as long as all
+the files stay together.
+
+
+WHAT EACH MENU OPTION DOES
+--------------------------
+
+1  Setup         Installs PyYAML. Only needed once.
+2  Test          Runs 21 checks against every rule. Run this after any change.
+3  Attack demo   The rug-pull attack, caught. Fast, no server involved.
+4  Live demo     The same attack over a real MCP server and real protocol.
+5  Report        Builds warden_report.html and opens it in your browser.
+6  Text summary  The same information printed in the black window.
+7  Reset         Deletes recorded history. Your code is never touched.
+0  Quit
+
+
+WHAT IS ACTUALLY IN HERE
+------------------------
+
+warden\             the product
+  contracts.py      what a tool claims to be, and how we fingerprint it
+  registry.py       which tools are approved, which are quarantined
+  policy.py         reads your rules from policy.yaml
+  enforcer.py       the decision engine - seven checks on every call
+  proxy.py          sits between a real MCP client and a real MCP server
+  audit.py          the evidence log
+  report.py         builds the HTML report
+
+mock_server\        a deliberately hostile MCP server, for testing
+policy.yaml         your rules - edit this, no code changes needed
+PROGRESS.md         the build log, one entry per day worked
+README.md           the technical explanation
+
+
+ONE THING TO DO SOON
+--------------------
+
+Get this into GitHub. You lost the last version of Warden because it only
+existed in one folder on one machine. The .gitignore file is already set up
+to keep your databases and any future API keys out of the repo.
+
+Ask Claude for the GitHub steps when you are ready.
