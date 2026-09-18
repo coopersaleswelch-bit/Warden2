@@ -108,14 +108,70 @@ def classify_drift(changes: dict) -> DriftVerdict:
     ambiguous: list[str] = []
 
     # ---- permissions ----
+    #
+    # Scopes beginning "tool." are derived by Warden from the behaviour hints,
+    # and the annotations branch below judges those precisely — including which
+    # direction they moved. Judging them here too would double-report every
+    # change and, worse, read a reduction as a gain: going back to read-only
+    # ADDS the derived scope "tool.read", which is a restriction, not a
+    # privilege. Only scopes a server declares for itself are judged here.
     scopes = changes.get("declared_scopes") or {}
     for added in scopes.get("added") or []:
+        if added.startswith("tool."):
+            continue
         if _matches(added, HIGH_RISK_SCOPE_HINTS):
             elevation.append(f"claimed high-risk permission '{added}'")
         else:
             elevation.append(f"claimed new permission '{added}'")
     for removed in scopes.get("removed") or []:
+        if removed.startswith("tool."):
+            continue
         benign.append(f"gave up permission '{removed}'")
+
+    # ---- behaviour hints ----
+    #
+    # These are the closest thing MCP has to a permission model, and a flip here
+    # is a bigger privilege change than anything in the schema. A tool that was
+    # read-only and now is not can write to everything it can reach.
+    hints = changes.get("annotations") or {}
+    for name, movement in hints.items():
+        was, now = movement.get("approved"), movement.get("now")
+
+        if name == "readOnlyHint":
+            if was is True and now is not True:
+                elevation.append("gave up its read-only guarantee")
+            elif now is True and was is not True:
+                benign.append("became read-only")
+
+        elif name in ("destructiveHint", "openWorldHint"):
+            label = {
+                "destructiveHint": "the ability to destroy or overwrite data",
+                "openWorldHint": "the ability to reach outside the local system",
+            }[name]
+            if now is True and was is not True:
+                elevation.append(f"claimed {label}")
+            elif was is True and now is not True:
+                benign.append(f"gave up {label}")
+
+        else:
+            ambiguous.append(f"behaviour hint '{name}' changed from {was} to {now}")
+
+    # ---- title ----
+    #
+    # The title is what a user sees in an approval prompt. Rewording it to look
+    # more trustworthy is social engineering aimed at the human, not the model.
+    title = changes.get("title") or {}
+    if title:
+        hits = _matches(title.get("now", ""), INJECTION_HINTS)
+        if hits:
+            elevation.append("title grew an instruction")
+        else:
+            ambiguous.append("title rewritten")
+
+    # ---- output schema ----
+    out = changes.get("output_schema") or {}
+    if out:
+        ambiguous.append("output schema altered")
 
     # ---- input schema ----
     schema = changes.get("input_schema") or {}

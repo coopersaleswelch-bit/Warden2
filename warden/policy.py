@@ -25,10 +25,18 @@ DEFAULT_POLICY: dict[str, Any] = {
 
         # Risk-aware drift handling. Each may be quarantine | block | warn.
         # Leave one as None to fall back to on_drift above.
+        # Whether serverInfo.version can be trusted to change when the server
+        # changes. Default false: the official filesystem server reports 0.2.0
+        # for package version 2026.8.31, so a real release does not move it.
+        # Set true per-server for servers you know version themselves properly.
+        "version_is_authoritative": False,
+
         "on_elevation": "quarantine",       # the tool gained power
         "on_silent_mutation": "quarantine", # changed without declaring a version
-        "on_benign_drift": None,            # strictly less capable, or reworded
-        "on_ambiguous_drift": None,         # neither clearly safe nor escalating
+        # accept = re-pin and allow. Safe for benign by construction: the tool
+        # gained nothing, so there is nothing to approve.
+        "on_benign_drift": "accept",        # strictly less capable, or reworded
+        "on_ambiguous_drift": "warn",       # neither clearly safe nor escalating
 
         # When a server declares a NEW version and the only changes are benign,
         # accept the new contract automatically. This is what stops a routine
@@ -59,6 +67,15 @@ class Policy:
     defaults: dict[str, Any]
     denied_scopes: list[str]
     rules: dict[str, ToolRule]
+    servers: dict[str, dict] = field(default_factory=dict)
+
+    def server_setting(self, server: str, name: str) -> Any:
+        """A per-server override, falling back to the global default."""
+        override = (self.servers.get(server) or {}).get(name)
+        return self.default(name) if override is None else override
+
+    def version_is_authoritative(self, server: str) -> bool:
+        return bool(self.server_setting(server, "version_is_authoritative"))
 
     def rule_for(self, server: str, tool: str) -> ToolRule | None:
         return self.rules.get(f"{server}::{tool}")
@@ -113,4 +130,5 @@ def load_policy(path: str | Path = "policy.yaml") -> Policy:
         defaults=defaults,
         denied_scopes=list(raw.get("denied_scopes") or []),
         rules=rules,
+        servers=dict(raw.get("servers") or {}),
     )

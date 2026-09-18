@@ -277,7 +277,9 @@ class Enforcer:
         state = self.version_state(server)
         version = self.registry.get_server_version(server)
 
-        if state == "unchanged":
+        authoritative = self.policy.version_is_authoritative(server)
+
+        if authoritative and state == "unchanged":
             # The server says it is the same software. It is not.
             kind = SILENT_MUTATION
             detail = (
@@ -285,6 +287,10 @@ class Enforcer:
                 f"({verdict.summary()})"
             )
         else:
+            # Without a version we can trust, the only question left is whether
+            # the tool gained power. That is a narrower guarantee and it is
+            # stated honestly rather than dressed up: Warden promises no tool
+            # gains capability without a human, not that nothing ever changes.
             kind = verdict.level
             detail = verdict.summary()
 
@@ -293,7 +299,8 @@ class Enforcer:
         # quarantining those is how a security control gets switched off.
         # Elevation is the gate, not change itself.
         if (
-            kind in (BENIGN, AMBIGUOUS)
+            authoritative
+            and kind in (BENIGN, AMBIGUOUS)
             and state == "upgraded"
             and self.policy.default("auto_repin_on_version_bump")
         ):
@@ -314,6 +321,19 @@ class Enforcer:
 
         action = self.policy.drift_action(kind)
         label = kind.replace("_", " ").lower()
+
+        if action == "accept":
+            self.registry.reapprove(live, reason=f"accepted {label} change: {detail}")
+            return Decision(
+                True,
+                "DRIFT_ACCEPTED",
+                f"{label} change accepted — the tool gained nothing ({detail})",
+                server,
+                tool,
+                drift=changes,
+                flags=["repinned", kind.lower()],
+                fingerprint=fp,
+            )
 
         if action == "warn":
             return Decision(

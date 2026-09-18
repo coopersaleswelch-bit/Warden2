@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS contracts (
     description     TEXT NOT NULL,
     input_schema    TEXT NOT NULL,
     declared_scopes TEXT NOT NULL,
+    title           TEXT NOT NULL DEFAULT '',
+    annotations     TEXT NOT NULL DEFAULT '{}',
+    output_schema   TEXT NOT NULL DEFAULT '{}',
     fingerprint     TEXT NOT NULL,
     status          TEXT NOT NULL,
     pinned_at       REAL NOT NULL,
@@ -65,7 +68,32 @@ class ContractRegistry:
         self._lock = threading.RLock()
         with self._lock:
             self._conn.executescript(SCHEMA)
+            self._migrate()
             self._conn.commit()
+
+    def _migrate(self) -> None:
+        """
+        Add columns introduced after a database was first created.
+
+        CREATE TABLE IF NOT EXISTS silently does nothing on an existing table,
+        so a registry written by an earlier version would keep working while
+        missing the columns - and then fail on read. Cheap to check, and it
+        means nobody has to delete their approved contracts to upgrade.
+        """
+        existing = {
+            r["name"]
+            for r in self._conn.execute("PRAGMA table_info(contracts)").fetchall()
+        }
+        for column, default in (
+            ("title", "''"),
+            ("annotations", "'{}'"),
+            ("output_schema", "'{}'"),
+        ):
+            if column not in existing:
+                self._conn.execute(
+                    f"ALTER TABLE contracts ADD COLUMN {column} TEXT NOT NULL "
+                    f"DEFAULT {default}"
+                )
 
     def _exec(self, sql: str, params: tuple = ()):
         """Every statement goes through here so the lock is never forgotten."""
@@ -83,12 +111,16 @@ class ContractRegistry:
             """
             INSERT INTO contracts
                 (key, server, tool, description, input_schema, declared_scopes,
+                 title, annotations, output_schema,
                  fingerprint, status, pinned_at, status_reason, status_changed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET
                 description=excluded.description,
                 input_schema=excluded.input_schema,
                 declared_scopes=excluded.declared_scopes,
+                title=excluded.title,
+                annotations=excluded.annotations,
+                output_schema=excluded.output_schema,
                 fingerprint=excluded.fingerprint,
                 status=excluded.status,
                 pinned_at=excluded.pinned_at,
@@ -102,6 +134,9 @@ class ContractRegistry:
                 row["description"],
                 row["input_schema"],
                 row["declared_scopes"],
+                row["title"],
+                row["annotations"],
+                row["output_schema"],
                 row["fingerprint"],
                 APPROVED,
                 time.time(),

@@ -54,12 +54,32 @@ defaults:
   # How many successful calls before the argument-shape baseline is trusted.
   baseline_calls: 3
 
+# Per-server settings. Anything omitted falls back to the defaults above.
+#
+# version_is_authoritative says whether this server's serverInfo.version can be
+# trusted to change when the server changes. It is off by default because real
+# servers do not honour it: the official @modelcontextprotocol/server-filesystem
+# reports version "0.2.0" while shipping as package 2026.8.31.
+#
+# With it OFF, Warden's guarantee is narrower and honest: no tool gains
+# capability without a human. Changes that gain nothing are accepted.
+# With it ON, Warden additionally treats "contract changed but version did not"
+# as hostile, which is the strongest signal available - but only turn it on for
+# a server you know versions itself properly.
+servers:
+  notes-mcp:
+    version_is_authoritative: true
+
 # Scopes no tool may ever declare, regardless of who published it.
+# Warden derives tool.read / tool.write / tool.destructive / tool.openworld
+# from the MCP behaviour hints, so these work against servers that never heard
+# of Warden. Uncomment tool.destructive to refuse every destructive tool.
 denied_scopes:
   - shell.exec
   - process.spawn
   - credentials.read
   - network.raw
+  # - tool.destructive
 
 # Per-tool rules.
 tools:

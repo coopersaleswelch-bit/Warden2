@@ -6,6 +6,19 @@ title Warden 2.0
 color 0F
 
 REM ---------------------------------------------------------------------
+REM  Refuse to run from a temp folder.
+REM
+REM  Double-clicking a .bat while still browsing INSIDE a zip makes Windows
+REM  copy that one file to a temp folder and run it alone, with none of the
+REM  project beside it. The failure that produces is confusing and looks like
+REM  a bug in the code, so catch it here and say what actually happened.
+REM ---------------------------------------------------------------------
+echo "%CD%" | findstr /i "\\Temp\\" >nul
+if !errorlevel!==0 goto INZIP
+echo "%CD%" | findstr /i ".zip" >nul
+if !errorlevel!==0 goto INZIP
+
+REM ---------------------------------------------------------------------
 REM  Find a working Python. Tries the three names Windows might have.
 REM  "where python" is not enough - the Microsoft Store ships a fake stub
 REM  that answers to the name but fails on the first real command, so we
@@ -47,9 +60,10 @@ echo     2   Test             prove the code works (21 checks)
 echo     3   Attack demo      the rug-pull, caught
 echo     4   Live demo        same attack over a real MCP server
 echo     5   Upgrade demo     real updates pass, attacks still do not
-echo     6   Report           open the evidence page in your browser
-echo     7   Text summary     same thing, in this window
-echo     8   Reset            wipe recorded history, keep the code
+echo     6   Real server      run against the official filesystem MCP server
+echo     7   Report           open the evidence page in your browser
+echo     8   Text summary     same thing, in this window
+echo     9   Reset            wipe recorded history, keep the code
 echo.
 echo     0   Quit
 echo.
@@ -61,9 +75,10 @@ if "%choice%"=="2" goto TEST
 if "%choice%"=="3" goto DEMO
 if "%choice%"=="4" goto LIVE
 if "%choice%"=="5" goto DAY3
-if "%choice%"=="6" goto REPORT
-if "%choice%"=="7" goto SUMMARY
-if "%choice%"=="8" goto RESET
+if "%choice%"=="6" goto DAY4
+if "%choice%"=="7" goto REPORT
+if "%choice%"=="8" goto SUMMARY
+if "%choice%"=="9" goto RESET
 if "%choice%"=="0" goto END
 goto MENU
 
@@ -127,6 +142,17 @@ echo.
 pause
 goto MENU
 
+:DAY4
+cls
+echo.
+echo   Warden against @modelcontextprotocol/server-filesystem - the official
+echo   server, written by people who never heard of Warden.
+echo.
+!PY! demo_day4.py
+echo.
+pause
+goto MENU
+
 :REPORT
 cls
 echo.
@@ -162,6 +188,31 @@ echo   Cleared.
 echo.
 pause
 goto MENU
+
+:INZIP
+cls
+echo.
+echo   ==========================================================
+echo     This is running from inside the zip file.
+echo   ==========================================================
+echo.
+echo   Windows copied this one file to a temporary folder and ran it
+echo   on its own. The rest of the project is not here, so nothing
+echo   would work - and the temp folder gets deleted automatically.
+echo.
+echo   Current folder:
+echo   %CD%
+echo.
+echo   To fix it:
+echo     1. Close this window.
+echo     2. Open the zip and find the folder inside it.
+echo     3. Right-click that FOLDER and choose Copy.
+echo     4. Press the Windows key + D to show your Desktop.
+echo     5. Right-click empty space and choose Paste.
+echo     6. Open the folder from your Desktop and try again.
+echo.
+pause
+goto END
 
 :NOPYTHON
 cls

@@ -157,15 +157,86 @@ project, which means the tests are only as adversarial as I remembered to be.
 
 ---
 
-## Day 4 — (not yet)
+## Day 4 — 18 September 2026
+
+**Pointed Warden at a server nobody here wrote, and found a security hole.**
+
+Installed `@modelcontextprotocol/server-filesystem` 2026.8.31 from npm — the
+official filesystem server from the protocol maintainers — and ran Warden in
+front of it over real JSON-RPC.
+
+**The good news:** it worked first try. All 14 tools discovered and pinned, the
+enforcement run clean, a real `read_text_file` call forwarded and answered. No
+protocol breakage, no crashes.
+
+**The bad news, and the reason this day mattered:**
+
+I had invented `annotations.scopes` for my own mock. Real MCP servers do not
+publish that. They publish behaviour hints — `readOnlyHint`, `destructiveHint`,
+`idempotentHint`, `openWorldHint` — and a `title` and an `outputSchema`. Warden
+captured none of them.
+
+So a server could flip `readOnlyHint` from true to false, add
+`destructiveHint: true`, turn on `openWorldHint`, and rewrite the title shown to
+the user — and **Warden's fingerprint would not change at all**. A read-only
+tool becoming destructive and network-capable was completely invisible. Three
+days of work validating a schema I made up.
+
+Fixed:
+
+- `title`, `annotations` and `outputSchema` are now part of the contract and the
+  fingerprint, and `diff_contracts` explains changes to each.
+- Scopes are derived from the real behaviour hints, so permission rules work
+  against servers that never heard of Warden. A tool that does not claim
+  `readOnlyHint` is treated as able to write — absence of a promise is not a
+  promise.
+- The classifier judges hint movement directionally: losing read-only or gaining
+  destructive/open-world is ELEVATION; the reverse is BENIGN, so a vendor
+  hardening its own tool is not punished for it.
+- A title rewritten to look more trustworthy is caught as AMBIGUOUS; a title
+  carrying an instruction is ELEVATION. The title is what a human sees in an
+  approval prompt, so poisoning it is social engineering aimed at the person.
+- Registry gained a migration path, so an existing approved-contracts database
+  upgrades in place rather than having to be deleted.
+
+**The second finding, which forced a design change:**
+
+The server reports `serverInfo.version` as `0.2.0` while shipping as package
+`2026.8.31`. Its version string does not track its releases. Day 3's matrix
+assumed a version bump was a reliable signal that a change was declared.
+Against real servers it is not.
+
+So `version_is_authoritative` is now a per-server setting, **off by default**,
+with `notes-mcp` turning it on in `policy.yaml`. With it off, Warden's guarantee
+is narrower and honest: *no tool gains capability without a human*, rather than
+*nothing changes without a human*. Changes that gain nothing are accepted
+automatically.
+
+**A bug the new tests caught:** going back to read-only was classified as
+ELEVATION, because it *adds* the derived scope `tool.read` and the scope rule
+flagged any added scope as a gain. It was also double-reporting every hint
+change. Derived `tool.*` scopes are now judged only by the annotations branch,
+which knows which direction they moved.
+
+Shipped: `demo_day4.py` (runs live against the real server if Node is present,
+otherwise replays its captured published metadata from `fixtures/`), a
+temp-folder guard on both `.bat` launchers, and tests from 34 to 44.
+
+**Not done yet:** only one third-party server, and a read-only one at that. A
+server with `listChanged` notifications firing mid-session, or remote/HTTP
+transport, has not been tried.
+
+---
+
+## Day 5 — (not yet)
 
 Planned:
-1. Point Warden at a real public MCP server. Expect breakage: batched responses,
-   notifications mid-stream, tools that legitimately change shape per request.
-2. Config generator — output the exact JSON snippet to drop Warden into a Claude
-   Desktop config, so installing it is copy-paste rather than a command line.
-3. Decide what the demo is. The report page is close, but the story a security
-   team needs to see in 90 seconds is not yet one screen.
+1. A second and third real server, ideally one that pushes
+   `notifications/tools/list_changed` mid-session.
+2. Config generator — emit the exact JSON to drop Warden into a Claude Desktop
+   config, so installing it is copy-paste.
+3. The 90-second story. The report page is close but it is not yet one screen a
+   security engineer can look at and immediately understand.
 
 ---
 

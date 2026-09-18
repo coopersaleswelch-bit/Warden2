@@ -17,6 +17,19 @@ echo     Repo   : %REPO%
 echo.
 
 REM ---------------------------------------------------------------------
+REM  Refuse to run from a temp folder.
+REM
+REM  Double-clicking a .bat while still browsing INSIDE a zip makes Windows
+REM  copy that one file to a temp folder and run it alone, with none of the
+REM  project beside it. The failure that produces is confusing and looks like
+REM  a bug in the code, so catch it here and say what actually happened.
+REM ---------------------------------------------------------------------
+echo "%CD%" | findstr /i "\\Temp\\" >nul
+if !errorlevel!==0 goto INZIP
+echo "%CD%" | findstr /i ".zip" >nul
+if !errorlevel!==0 goto INZIP
+
+REM ---------------------------------------------------------------------
 REM  1. Is Git installed?
 REM ---------------------------------------------------------------------
 git --version >nul 2>nul
@@ -151,6 +164,31 @@ if !errorlevel!==0 (
   echo   The upload did not finish. Screenshot this window and send
   echo   it to Claude - the error text above says why.
 )
+echo.
+pause
+goto END
+
+:INZIP
+cls
+echo.
+echo   ==========================================================
+echo     This is running from inside the zip file.
+echo   ==========================================================
+echo.
+echo   Windows copied this one file to a temporary folder and ran it
+echo   on its own. The rest of the project is not here, so nothing
+echo   would work - and the temp folder gets deleted automatically.
+echo.
+echo   Current folder:
+echo   %CD%
+echo.
+echo   To fix it:
+echo     1. Close this window.
+echo     2. Open the zip and find the folder inside it.
+echo     3. Right-click that FOLDER and choose Copy.
+echo     4. Press the Windows key + D to show your Desktop.
+echo     5. Right-click empty space and choose Paste.
+echo     6. Open the folder from your Desktop and try again.
 echo.
 pause
 goto END

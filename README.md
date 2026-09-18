@@ -60,8 +60,19 @@ changing**.
 | unknown | classified, falls back to policy | |
 
 Elevation means a new permission, a new input field named like a command or a
-credential, or a description that grew an instruction. A description is prompt
-context, so text added there is text injected into the agent.
+credential, a description that grew an instruction, or a tool losing its
+read-only guarantee. A description is prompt context, so text added there is
+text injected into the agent.
+
+Warden derives permissions from the MCP behaviour hints (`readOnlyHint`,
+`destructiveHint`, `openWorldHint`), so its rules work against servers that
+never heard of it. A tool that does not claim to be read-only is treated as
+able to write — absence of a promise is not a promise.
+
+**On version trust:** real servers do not reliably bump `serverInfo.version`.
+The official filesystem server reports `0.2.0` while shipping as package
+`2026.8.31`. So version trust is off by default and set per-server. With it off,
+the guarantee is narrower and honest: *no tool gains capability without a human*.
 
 ## Why quarantine matters
 
@@ -112,13 +123,23 @@ Four sessions against a real server: a genuine v1.1.0 release is accepted with
 nobody paged, a swap hiding behind an unchanged version is caught, and a swap
 carrying an honest version bump is caught anyway.
 
+## Run against a real server
+
+```
+python demo_day4.py
+```
+
+Warden against `@modelcontextprotocol/server-filesystem` 2026.8.31 — the
+official server from the protocol maintainers. Runs live if Node is installed,
+otherwise replays that server's own published metadata from `fixtures/`.
+
 ## Run the tests
 
 ```
 python test_warden.py
 ```
 
-34 checks across the enforcement rules, the classifier and the proxy layer. If this fails,
+44 checks across the enforcement rules, the classifier and the proxy layer. If this fails,
 don't commit.
 
 ## Open the evidence report
@@ -151,6 +172,7 @@ Python.
 | `on_benign_drift` | unset, or an action | strictly less capable |
 | `on_ambiguous_drift` | unset, or an action | neither safe nor escalating |
 | `auto_repin_on_version_bump` | `true` / `false` | accept declared upgrades that gained nothing |
+| `version_is_authoritative` | `true` / `false` | whether this server's version can be trusted (off by default) |
 | `on_undeclared_arg` | `deny` / `warn` / `allow` | argument not in the approved schema |
 | `on_novel_arg_shape` | `deny` / `warn` / `allow` | never-seen argument shape |
 | `baseline_calls` | integer | calls before the baseline is trusted |
@@ -204,10 +226,13 @@ Run once with `--discover` to pin the server's current tools. Then drop the
 
 ## Status
 
-Day 3. Enforcement core, inline proxy, and risk-aware drift handling all work,
-with 34 tests passing. Routine upgrades no longer trigger a quarantine.
+Day 4. Tested against `@modelcontextprotocol/server-filesystem` 2026.8.31, a
+real third-party server. 44 tests passing.
 
-Warden has still not been run against a third-party MCP server in the wild. That
-is Day 4, and it is the honest gap: every test so far is against a server
-written for this project, so the tests are only as adversarial as I remembered
-to be.
+That test found a hole: Warden had been fingerprinting a metadata schema that
+does not exist in real MCP, so a tool silently losing its read-only guarantee
+was invisible. Fixed, with tests.
+
+Remaining gap: one third-party server is not enough, and it is a read-only one.
+Servers that push `tools/list_changed` notifications mid-session, or run over
+HTTP rather than stdio, have not been tried.

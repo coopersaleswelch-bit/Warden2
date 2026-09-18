@@ -50,17 +50,50 @@ def log(msg: str) -> None:
 
 
 def contract_from_mcp_tool(server_name: str, tool: dict) -> ToolContract:
-    """Translate one entry of an MCP tools/list result into a pinnable contract."""
+    """
+    Translate one entry of an MCP tools/list result into a pinnable contract.
+
+    Real MCP tools do not declare "scopes". They declare behaviour hints, and
+    those hints are the closest thing the protocol has to a permission model:
+
+        readOnlyHint: false   the tool can modify state
+        destructiveHint: true the tool can destroy or overwrite
+        openWorldHint: true   the tool can reach outside the local system
+
+    Warden derives scopes from those so its permission rules work against
+    servers nobody wrote for it. A custom "scopes" annotation is still honoured
+    for servers that publish one, but nothing depends on it.
+    """
     annotations = tool.get("annotations") or {}
-    scopes = annotations.get("scopes") or []
-    if isinstance(scopes, str):
-        scopes = [scopes]
+
+    scopes: set[str] = set()
+
+    custom = annotations.get("scopes") or []
+    if isinstance(custom, str):
+        custom = [custom]
+    scopes.update(custom)
+
+    # readOnlyHint is the important one, and its absence is not a promise.
+    # A tool that does not claim to be read-only is treated as able to write.
+    if annotations.get("readOnlyHint") is True:
+        scopes.add("tool.read")
+    else:
+        scopes.add("tool.write")
+
+    if annotations.get("destructiveHint") is True:
+        scopes.add("tool.destructive")
+    if annotations.get("openWorldHint") is True:
+        scopes.add("tool.openworld")
+
     return ToolContract(
         server=server_name,
         tool=tool.get("name", "<unnamed>"),
         description=tool.get("description", ""),
         input_schema=tool.get("inputSchema") or tool.get("input_schema") or {},
         declared_scopes=tuple(sorted(scopes)),
+        title=tool.get("title", "") or "",
+        annotations={k: v for k, v in annotations.items() if k != "scopes"},
+        output_schema=tool.get("outputSchema") or tool.get("output_schema") or {},
     )
 
 

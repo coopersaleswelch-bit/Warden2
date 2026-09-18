@@ -27,13 +27,24 @@ def _canonical(obj: Any) -> str:
 
 @dataclass(frozen=True)
 class ToolContract:
-    """A snapshot of everything a tool claims to be."""
+    """
+    A snapshot of everything a tool claims to be.
+
+    "Everything" is meant literally. Real MCP tools carry a title shown to the
+    user, behaviour hints (read-only, destructive, open-world), and an output
+    schema. Leaving any of them out of the fingerprint means a server can change
+    it without Warden noticing - and flipping readOnlyHint from true to false is
+    one of the largest privilege changes a tool can make.
+    """
 
     server: str
     tool: str
     description: str
     input_schema: dict = field(default_factory=dict)
     declared_scopes: tuple[str, ...] = ()
+    title: str = ""
+    annotations: dict = field(default_factory=dict)
+    output_schema: dict = field(default_factory=dict)
 
     @property
     def key(self) -> str:
@@ -48,6 +59,9 @@ class ToolContract:
                 "description": self.description,
                 "input_schema": self.input_schema,
                 "declared_scopes": sorted(self.declared_scopes),
+                "title": self.title,
+                "annotations": self.annotations,
+                "output_schema": self.output_schema,
             }
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -62,6 +76,9 @@ class ToolContract:
             "description": self.description,
             "input_schema": _canonical(self.input_schema),
             "declared_scopes": _canonical(sorted(self.declared_scopes)),
+            "title": self.title,
+            "annotations": _canonical(self.annotations),
+            "output_schema": _canonical(self.output_schema),
             "fingerprint": self.fingerprint(),
         }
 
@@ -73,6 +90,9 @@ class ToolContract:
             description=row["description"],
             input_schema=json.loads(row["input_schema"]),
             declared_scopes=tuple(json.loads(row["declared_scopes"])),
+            title=row["title"] or "",
+            annotations=json.loads(row["annotations"] or "{}"),
+            output_schema=json.loads(row["output_schema"] or "{}"),
         )
 
 
@@ -102,6 +122,24 @@ def diff_contracts(pinned: ToolContract, live: ToolContract) -> dict:
             "now": live.input_schema,
         }
 
+    if pinned.title != live.title:
+        changes["title"] = {"approved": pinned.title, "now": live.title}
+
+    if pinned.annotations != live.annotations:
+        keys = set(pinned.annotations) | set(live.annotations)
+        flipped = {
+            k: {"approved": pinned.annotations.get(k), "now": live.annotations.get(k)}
+            for k in sorted(keys)
+            if pinned.annotations.get(k) != live.annotations.get(k)
+        }
+        changes["annotations"] = flipped
+
+    if pinned.output_schema != live.output_schema:
+        changes["output_schema"] = {
+            "approved": pinned.output_schema,
+            "now": live.output_schema,
+        }
+
     if set(pinned.declared_scopes) != set(live.declared_scopes):
         changes["declared_scopes"] = {
             "added": sorted(set(live.declared_scopes) - set(pinned.declared_scopes)),
@@ -128,6 +166,13 @@ def summarize_drift(changes: dict) -> str:
             parts.append(f"removed input fields {removed}")
         if not added and not removed:
             parts.append("input schema altered")
+    if "title" in changes:
+        parts.append("title rewritten")
+    if "annotations" in changes:
+        names = ", ".join(changes["annotations"].keys())
+        parts.append(f"behaviour hints changed ({names})")
+    if "output_schema" in changes:
+        parts.append("output schema altered")
     if "declared_scopes" in changes:
         added = changes["declared_scopes"]["added"]
         if added:
