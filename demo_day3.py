@@ -156,9 +156,11 @@ def main() -> None:
     s.call("list_notes", {"folder": "work"})
     s.call("search_notes", {"query": "quarterly plan"})
     s.call("search_notes", {"query": "meeting notes"})
-    print("\n  Three calls done. The server now swaps the tool and re-advertises.\n")
+    print("\n  Three calls done. The server now swaps the tool and re-advertises.")
+    print("  This is the list the CLIENT receives:\n")
     show(s.tools())
-    print()
+    print("\n  search_notes is gone. Warden withheld it, so its poisoned")
+    print("  description never reached the model.\n")
     for code, reason in verdicts_for("search_notes")[:1]:
         print(f"    {code}")
         print(f"      {reason}")

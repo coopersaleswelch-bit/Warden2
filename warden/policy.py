@@ -21,6 +21,13 @@ DEFAULT_POLICY: dict[str, Any] = {
         "on_drift": "quarantine",     # fallback for any drift case not set below
         "on_novel_arg_shape": "warn", # deny | warn | allow
         "on_undeclared_arg": "deny",  # argument not in the approved input schema
+
+        # What the client sees of a quarantined tool.
+        #   hide   - removed from the tool list entirely (recommended)
+        #   pinned - the last APPROVED definition is served instead; calls are
+        #            still refused. Keeps the client's view stable.
+        # Either way the poisoned description never reaches the model.
+        "quarantined_tool_view": "hide",
         "baseline_calls": 3,          # calls before arg-shape baseline is trusted
 
         # Risk-aware drift handling. Each may be quarantine | block | warn.

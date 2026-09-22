@@ -1,39 +1,24 @@
-WARDEN DAY 4
+WARDEN DAY 5
 ============
 
-These are the Day 4 files. They go INTO your existing WARDEN-SEPT15 folder.
-
-Do NOT keep this as a separate folder. A separate folder becomes a separate
-git repo, which is what made the push fail last time.
+These files go INTO your existing WARDEN-SEPT15 folder. Do not keep them as
+a separate folder - that creates a separate git repo and the push fails.
 
 
-WHAT TO DO
-----------
-
-1. Extract this zip somewhere (Desktop is fine).
-
-2. Open the extracted WARDEN-DAY4-FILES folder.
-
-3. Press Ctrl+A to select everything, then Ctrl+C to copy.
-
-4. Open your WARDEN-SEPT15 folder.
-
-5. Press Ctrl+V to paste.
-
-6. Windows will ask about duplicates. Choose "Replace the files in the
-   destination".
-
-7. In WARDEN-SEPT15, double-click START WARDEN.bat.
-   Press 2 to run the tests. You want 44 passed, 0 failed.
-   Press 6 to run Warden against the real filesystem MCP server.
-
-8. Double-click PUSH TO GITHUB.bat to save it.
-
-9. You can delete WARDEN-DAY4-FILES afterwards.
+1. Copy the WARDEN-DAY5-FILES folder out of the zip onto your Desktop.
+2. Open it. Press Ctrl+A, then Ctrl+C.
+3. Open WARDEN-SEPT15. Press Ctrl+V.
+4. Choose "Replace the files in the destination".
+5. In WARDEN-SEPT15, double-click START WARDEN.bat and press 2.
+   The last line should end in "0 failed".
+6. Double-click PUSH TO GITHUB.bat to save it.
+7. Delete WARDEN-DAY5-FILES from your Desktop.
 
 
 NEW THIS TIME
 -------------
 
-Both .bat files now refuse to run from inside a zip and tell you what
-happened instead of failing with a confusing error.
+Menu option 10 - Protect. Puts Warden in front of an MCP server you already
+have in Claude Desktop. Option 11 puts it back exactly as it was.
+
+Do not use option 10 until you have done steps 1 to 6 above.

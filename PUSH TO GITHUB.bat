@@ -100,6 +100,7 @@ for /f "tokens=*" %%f in ('git diff --cached --name-only 2^>nul') do (
   echo %%f | findstr /i /e ".db" >nul && set "LEAK=%%f"
   echo %%f | findstr /i /e ".env" >nul && set "LEAK=%%f"
   echo %%f | findstr /i /e ".log" >nul && set "LEAK=%%f"
+  echo %%f | findstr /i "wrapped_servers" >nul && set "LEAK=%%f"
 )
 
 if defined LEAK (

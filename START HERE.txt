@@ -22,13 +22,16 @@ WHAT TO DO
    Wait for it to finish.
 
 5. Type  2  and press Enter. This runs the tests.
-   You want to see:  21 passed, 0 failed
+   You want the last line to end in:  0 failed
 
-6. Type  4  and press Enter. This is the good one - it runs the real attack
-   against a real server with Warden in the middle.
+6. Type  6  and press Enter. This runs Warden against the official
+   filesystem MCP server - real code nobody here wrote.
 
-7. Type  5  and press Enter. This opens a report in your browser showing
+7. Type  7  and press Enter. This opens a report in your browser showing
    what Warden caught.
+
+8. When you are ready to use it for real, type  10  and press Enter. It
+   lists the MCP servers in your Claude Desktop and protects the one you pick.
 
 That is the whole thing.
 
@@ -45,12 +48,16 @@ WHAT EACH MENU OPTION DOES
 --------------------------
 
 1  Setup         Installs PyYAML. Only needed once.
-2  Test          Runs 21 checks against every rule. Run this after any change.
+2  Test          Checks every rule. Run this after any change.
 3  Attack demo   The rug-pull attack, caught. Fast, no server involved.
 4  Live demo     The same attack over a real MCP server and real protocol.
-5  Report        Builds warden_report.html and opens it in your browser.
-6  Text summary  The same information printed in the black window.
-7  Reset         Deletes recorded history. Your code is never touched.
+5  Upgrade demo  Real updates pass, attacks still do not.
+6  Real server   Warden against the official filesystem MCP server.
+7  Report        Builds the report and opens it in your browser.
+8  Text summary  The same information printed in the black window.
+9  Reset         Deletes recorded history. Your code is never touched.
+10 Protect       Puts Warden in front of a server in Claude Desktop.
+11 Unprotect     Puts that server back exactly as it was.
 0  Quit
 
 

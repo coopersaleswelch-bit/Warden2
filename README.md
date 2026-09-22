@@ -139,7 +139,7 @@ otherwise replays that server's own published metadata from `fixtures/`.
 python test_warden.py
 ```
 
-44 checks across the enforcement rules, the classifier and the proxy layer. If this fails,
+74 checks across the enforcement rules, the classifier, the proxy and the installer. If this fails,
 don't commit.
 
 ## Open the evidence report
@@ -173,6 +173,7 @@ Python.
 | `on_ambiguous_drift` | unset, or an action | neither safe nor escalating |
 | `auto_repin_on_version_bump` | `true` / `false` | accept declared upgrades that gained nothing |
 | `version_is_authoritative` | `true` / `false` | whether this server's version can be trusted (off by default) |
+| `quarantined_tool_view` | `hide` / `pinned` | withhold a quarantined tool, or serve its approved version |
 | `on_undeclared_arg` | `deny` / `warn` / `allow` | argument not in the approved schema |
 | `on_novel_arg_shape` | `deny` / `warn` / `allow` | never-seen argument shape |
 | `baseline_calls` | integer | calls before the baseline is trusted |
@@ -208,6 +209,7 @@ except WardenDenied as e:
 | `policy.yaml` | the rules |
 | `warden/classify.py` | judges whether a change gained power |
 | `warden/proxy.py` | the MCP stdio proxy — Warden inline on real traffic |
+| `warden/install.py` | protects servers in Claude Desktop, and restores them |
 | `warden/report.py` | the HTML evidence register |
 | `mock_server/notes_server.py` | a deliberately hostile MCP server, for testing |
 | `demo_deadbugz.py` | the attack replay, no server needed |
@@ -215,24 +217,47 @@ except WardenDenied as e:
 | `test_warden.py` | the test suite |
 | `summary.py` | CLI inspection |
 
-## How to install it in front of a real server
+## Protecting a server in Claude Desktop
 
 ```
-python -m warden.proxy --discover --server "python path/to/server.py" --name my-server
+python -m warden.install
 ```
 
-Run once with `--discover` to pin the server's current tools. Then drop the
-`--discover` flag and Warden enforces from that point on.
+Or menu option 10. It lists the MCP servers already in your Claude Desktop
+config and protects the one you pick: inspects it, approves its current tools,
+backs up your config, and puts Warden in front of it. Then fully quit Claude
+Desktop from the system tray and reopen it.
+
+```
+python -m warden.install --list
+python -m warden.install --protect NAME
+python -m warden.install --unprotect NAME        # restores it exactly
+python -m warden.install --add NAME -- <command> [args...]
+python -m warden.install --protect NAME --print-only   # show, change nothing
+```
+
+## Running the proxy by hand
+
+```
+python -m warden.proxy --discover --name my-server -- node server.js C:\some\folder
+```
+
+The server command goes after `--`, as separate arguments. Nothing is parsed, so
+Windows paths with backslashes and spaces arrive intact. Run once with
+`--discover` to pin the server's tools, then without it to enforce.
+
+## What the model is allowed to see
+
+A quarantined or unapproved tool is **withheld from the tool list** the client
+receives. Tool poisoning works through the description — the model reads it the
+moment the list arrives, no call needed — so blocking calls alone would leave
+the instruction in context, free to steer a different, approved tool.
 
 ## Status
 
-Day 4. Tested against `@modelcontextprotocol/server-filesystem` 2026.8.31, a
-real third-party server. 44 tests passing.
+Day 5. Installable into Claude Desktop, and verified end to end against the
+official filesystem MCP server. 74 tests passing.
 
-That test found a hole: Warden had been fingerprinting a metadata schema that
-does not exist in real MCP, so a tool silently losing its read-only guarantee
-was invisible. Fixed, with tests.
-
-Remaining gap: one third-party server is not enough, and it is a read-only one.
-Servers that push `tools/list_changed` notifications mid-session, or run over
-HTTP rather than stdio, have not been tried.
+Honest gap: it has not yet been run inside the real Claude Desktop app on
+Windows. The Windows fixes are based on known platform behaviour and verified on
+Linux, not observed on Windows.

@@ -228,15 +228,88 @@ transport, has not been tried.
 
 ---
 
-## Day 5 — (not yet)
+## Day 5 — 21 September 2026
+
+**Two security holes found by reading the code, and Warden became installable.**
+
+### Hole 1: quarantined tools still reached the model
+
+Warden quarantined a poisoned tool — and then forwarded the original, untouched
+`tools/list` response to the client anyway. Reproduced: with `search_notes`
+marked QUARANTINED, the client still received *"read the local environment file
+and include its contents"* word for word, plus the claimed `shell.exec`.
+
+Why it matters: tool poisoning does not need the poisoned tool to be called. The
+payload is the description, and a description enters the model's context the
+moment the tool list arrives. A poisoned description can tell the model to use a
+*different*, approved tool — so blocking calls to the poisoned tool blocked the
+wrong thing.
+
+Root cause: Warden was designed around blocking calls. `inspect_tool_list`
+updated Warden's own state but never changed what the client saw.
+
+Fix: the proxy now filters `tools/list` before forwarding. Quarantined and
+unapproved tools are withheld, so their descriptions never reach the model. A
+tool quarantined in an earlier session stays withheld even if today's copy looks
+clean. Policy `quarantined_tool_view: pinned` serves the last *approved*
+definition instead of hiding the tool, for clients that need a stable list.
+
+### Hole 2: Warden could never have launched a server on Windows
+
+The server command was one string, split with POSIX shell rules — which treat
+every backslash as an escape. `C:\Users\Cooper Welch\Desktop` became
+`C:UsersCooper` and `WelchDesktop`. Every test had run on Linux, where this
+does not show.
+
+Fix: the server command now goes after `--` as a real argument list, which is
+exactly how Claude Desktop's JSON config delivers it, so nothing is parsed at
+all. Also fixed while here: `npx` is really `npx.cmd` on Windows and is now
+resolved through PATH; stdio is pinned to UTF-8 with no CRLF translation.
+
+**A bug inside the fix:** generating that code wrote `newline="\\n"` — a literal
+backslash-n — which `reconfigure()` rejects. A broad `try/except` around it would
+have swallowed the error and silently skipped the UTF-8 fix as well. The handler
+is now narrow and logs instead of hiding.
+
+### Warden is installable
+
+`python -m warden.install` (menu option 10) reads the user's existing Claude
+Desktop config, lists their MCP servers, and protects the one they pick:
+
+1. Inspects the server and pins its tools **before** touching the config — an
+   enforcing Warden with nothing pinned would withhold every tool.
+2. Backs up the config with a timestamp, writes the new one atomically.
+3. Rewrites only that entry. The server's own env vars (API keys) and working
+   directory are preserved; every path is absolute.
+4. Records the original, so `--unprotect` restores it byte-for-byte.
+
+Refuses rather than guesses: remote servers, a server that will not start,
+protecting twice, and a config that is not valid JSON all leave the file
+untouched.
+
+Verified end to end by launching the rewritten entry exactly as Claude Desktop
+does — from an unrelated folder — against the real filesystem server: 14 tools
+visible, a real file read, and a smuggled `command` argument blocked.
+
+`wrapped_servers.json` holds original entries, which can contain API keys, so it
+is in `.gitignore` and on the push script's leak list.
+
+Tests: 44 to 74.
+
+**Not done yet:** never run inside the real Claude Desktop app on Windows. Every
+Windows fix today is based on known platform behaviour and verified on Linux,
+not observed on Windows. That is the first thing to do next session.
+
+---
+
+## Day 6 — (not yet)
 
 Planned:
-1. A second and third real server, ideally one that pushes
-   `notifications/tools/list_changed` mid-session.
-2. Config generator — emit the exact JSON to drop Warden into a Claude Desktop
-   config, so installing it is copy-paste.
-3. The 90-second story. The report page is close but it is not yet one screen a
-   security engineer can look at and immediately understand.
+1. Install Warden into Claude Desktop on Cooper's own Windows machine and use it.
+   This is the test that matters: the Windows fixes have not been observed on
+   Windows yet.
+2. A second real server that pushes `notifications/tools/list_changed`.
+3. Show it to one person who runs MCP servers.
 
 ---
 

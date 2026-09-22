@@ -132,7 +132,9 @@ def main() -> None:
     tools = client.request("tools/list")
     show_tools(tools)
     print("\n  Warden compared every fingerprint against the pinned contracts.")
-    print("  search_notes no longer matches. It is now quarantined.")
+    print("  search_notes no longer matches, so it is quarantined - and notice")
+    print("  it is missing from the list above. The client never received the")
+    print("  poisoned description, so the model never read the instruction in it.")
 
     banner("PHASE 5 — The client tries to use the mutated tool")
     print("  The call never reaches the server.\n")

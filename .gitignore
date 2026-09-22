@@ -18,3 +18,10 @@ venv/
 # Generated report
 warden_report.html
 warden_proxy.log
+
+# Records of servers Warden protects. Contains the ORIGINAL server entries,
+# which can include API keys in their env. Never commit.
+wrapped_servers.json
+
+# Demo scratch folder created by demo_day4.py
+sandbox_files/

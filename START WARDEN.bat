@@ -56,7 +56,7 @@ echo.
 echo   ----------------------------------------------------------
 echo.
 echo     1   Setup            install what Warden needs (run once)
-echo     2   Test             prove the code works (21 checks)
+echo     2   Test             prove the code works
 echo     3   Attack demo      the rug-pull, caught
 echo     4   Live demo        same attack over a real MCP server
 echo     5   Upgrade demo     real updates pass, attacks still do not
@@ -64,6 +64,9 @@ echo     6   Real server      run against the official filesystem MCP server
 echo     7   Report           open the evidence page in your browser
 echo     8   Text summary     same thing, in this window
 echo     9   Reset            wipe recorded history, keep the code
+echo.
+echo    10   Protect          put Warden in front of a Claude Desktop server
+echo    11   Unprotect        put a server back exactly as it was
 echo.
 echo     0   Quit
 echo.
@@ -79,6 +82,8 @@ if "%choice%"=="6" goto DAY4
 if "%choice%"=="7" goto REPORT
 if "%choice%"=="8" goto SUMMARY
 if "%choice%"=="9" goto RESET
+if "%choice%"=="10" goto PROTECT
+if "%choice%"=="11" goto UNPROTECT
 if "%choice%"=="0" goto END
 goto MENU
 
@@ -103,7 +108,7 @@ cls
 echo.
 !PY! test_warden.py
 echo.
-echo   Looking for "21 passed, 0 failed" above.
+echo   The last line should end in "0 failed".
 echo.
 pause
 goto MENU
@@ -149,6 +154,33 @@ echo   Warden against @modelcontextprotocol/server-filesystem - the official
 echo   server, written by people who never heard of Warden.
 echo.
 !PY! demo_day4.py
+echo.
+pause
+goto MENU
+
+:PROTECT
+cls
+echo.
+echo   This reads your Claude Desktop settings and lists your MCP servers.
+echo   Pick one, and Warden will inspect it, approve its current tools, back
+echo   up your settings, and put itself in front of that server.
+echo.
+!PY! -m warden.install
+echo.
+pause
+goto MENU
+
+:UNPROTECT
+cls
+echo.
+!PY! -m warden.install --list
+echo.
+set "srv="
+set /p srv=  Type the NAME of the server to unprotect (Enter to cancel):  
+if not defined srv goto MENU
+!PY! -m warden.install --unprotect "!srv!"
+echo.
+echo   Fully quit Claude Desktop from the system tray, then reopen it.
 echo.
 pause
 goto MENU
