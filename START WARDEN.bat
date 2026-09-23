@@ -67,6 +67,7 @@ echo     9   Reset            wipe recorded history, keep the code
 echo.
 echo    10   Protect          put Warden in front of a Claude Desktop server
 echo    11   Unprotect        put a server back exactly as it was
+echo    12   Check setup      is this machine ready? changes nothing
 echo.
 echo     0   Quit
 echo.
@@ -84,6 +85,7 @@ if "%choice%"=="8" goto SUMMARY
 if "%choice%"=="9" goto RESET
 if "%choice%"=="10" goto PROTECT
 if "%choice%"=="11" goto UNPROTECT
+if "%choice%"=="12" goto DOCTOR
 if "%choice%"=="0" goto END
 goto MENU
 
@@ -158,8 +160,18 @@ echo.
 pause
 goto MENU
 
+:DOCTOR
+cls
+echo.
+!PY! -m warden.doctor
+echo.
+pause
+goto MENU
+
 :PROTECT
 cls
+echo.
+echo   Run option 12 first if you have not already.
 echo.
 echo   This reads your Claude Desktop settings and lists your MCP servers.
 echo   Pick one, and Warden will inspect it, approve its current tools, back

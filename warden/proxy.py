@@ -90,6 +90,43 @@ def default_server_name(argv: list[str]) -> str:
     return os.path.splitext(os.path.basename(argv[0]))[0] or "mcp-server"
 
 
+def _strip_schema_dialect(value):
+    """Remove every "$schema" declaration, however deeply nested."""
+    if isinstance(value, dict):
+        return {
+            k: _strip_schema_dialect(v)
+            for k, v in value.items()
+            if k != "$schema"
+        }
+    if isinstance(value, list):
+        return [_strip_schema_dialect(v) for v in value]
+    return value
+
+
+def sanitize_for_client(tool: dict, mode: str) -> tuple[dict, bool]:
+    """
+    Adjust a tool definition so the client can accept it. Returns
+    (definition, changed).
+
+    Every official MCP server currently declares its schemas as JSON Schema
+    draft-07. Some clients validate against 2020-12 only and reject the tool
+    outright - the server is then unusable, with or without Warden in the path.
+    Dropping the dialect declaration lets the client fall back to its own
+    default, which is what it would have used anyway.
+
+    This is the one place Warden alters what a server said, so it is kept as
+    narrow as possible: only the "$schema" key is removed, nothing else, and
+    the change is logged. The PINNED contract still holds the server's original
+    definition, so drift detection is unaffected - Warden compares the server
+    against what the server said, not against what it forwarded.
+    """
+    if mode != "strip_dialect":
+        return tool, False
+
+    cleaned = _strip_schema_dialect(tool)
+    return cleaned, cleaned != tool
+
+
 def contract_from_mcp_tool(server_name: str, tool: dict) -> ToolContract:
     """
     Translate one entry of an MCP tools/list result into a pinnable contract.
@@ -326,7 +363,16 @@ class WardenProxy:
         """
         self.stats["tools_seen"] = len(tools)
         view = self.enforcer.policy.default("quarantined_tool_view")
+        compat = self.enforcer.policy.default("client_schema_compatibility")
         visible: list[dict] = []
+        adjusted = 0
+
+        def serve(definition: dict) -> None:
+            nonlocal adjusted
+            cleaned, changed = sanitize_for_client(definition, compat)
+            if changed:
+                adjusted += 1
+            visible.append(cleaned)
 
         for tool in tools:
             contract = contract_from_mcp_tool(self.server_name, tool)
@@ -336,7 +382,7 @@ class WardenProxy:
                 if self.discover:
                     self.enforcer.approve(contract, reason="discovery mode auto-pin")
                     log(f"pinned {contract.tool} ({contract.short_fingerprint()})")
-                    visible.append(tool)
+                    serve(tool)
                 else:
                     self.stats["withheld"] += 1
                     log(f"WITHHELD unapproved tool {contract.tool} from the client")
@@ -360,14 +406,17 @@ class WardenProxy:
                 self.stats["withheld"] += 1
                 if view == "pinned":
                     pinned = registry.get_contract(self.server_name, contract.tool)
-                    visible.append(mcp_tool_from_contract(pinned))
+                    serve(mcp_tool_from_contract(pinned))
                     log(f"serving APPROVED version of quarantined {contract.tool}")
                 else:
                     log(f"WITHHELD quarantined {contract.tool} from the client")
                 continue
 
-            visible.append(tool)
+            serve(tool)
 
+        if adjusted:
+            log(f"removed a stale schema dialect from {adjusted} tool(s) so the "
+                f"client will accept them; pinned contracts are unchanged")
         return visible
 
     # ---------- run loops ----------

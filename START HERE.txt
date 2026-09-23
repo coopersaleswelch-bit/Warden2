@@ -58,6 +58,7 @@ WHAT EACH MENU OPTION DOES
 9  Reset         Deletes recorded history. Your code is never touched.
 10 Protect       Puts Warden in front of a server in Claude Desktop.
 11 Unprotect     Puts that server back exactly as it was.
+12 Check setup   Is this machine ready? Reads only, changes nothing.
 0  Quit
 
 

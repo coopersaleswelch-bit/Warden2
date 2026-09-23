@@ -1,24 +1,16 @@
-WARDEN DAY 5
-============
+WARDEN - SCHEMA FIX
+===================
 
-These files go INTO your existing WARDEN-SEPT15 folder. Do not keep them as
-a separate folder - that creates a separate git repo and the push fails.
-
-
-1. Copy the WARDEN-DAY5-FILES folder out of the zip onto your Desktop.
-2. Open it. Press Ctrl+A, then Ctrl+C.
-3. Open WARDEN-SEPT15. Press Ctrl+V.
-4. Choose "Replace the files in the destination".
-5. In WARDEN-SEPT15, double-click START WARDEN.bat and press 2.
-   The last line should end in "0 failed".
-6. Double-click PUSH TO GITHUB.bat to save it.
-7. Delete WARDEN-DAY5-FILES from your Desktop.
+Fixes the "invalid outputSchema / unsupported dialect" error that stopped
+Claude Desktop using the files connector.
 
 
-NEW THIS TIME
--------------
-
-Menu option 10 - Protect. Puts Warden in front of an MCP server you already
-have in Claude Desktop. Option 11 puts it back exactly as it was.
-
-Do not use option 10 until you have done steps 1 to 6 above.
+1. Copy WARDEN-DAY6-FILES out of the zip onto your Desktop.
+2. Open it. Ctrl+A, then Ctrl+C.
+3. Open WARDEN-SEPT15. Ctrl+V.
+4. Folders -> Yes / Merge.  Files -> Replace the files in the destination.
+5. Delete WARDEN-DAY6-FILES from your Desktop.
+6. Double-click START WARDEN.bat, press 2.  You want: 100 passed, 0 failed
+7. Quit Claude Desktop from the system tray (Exit), then open it again.
+8. New chat. Ask it to use the files connector to read note.txt.
+9. Then press 7 in the menu for the report.

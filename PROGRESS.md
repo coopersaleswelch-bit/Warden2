@@ -302,14 +302,69 @@ not observed on Windows. That is the first thing to do next session.
 
 ---
 
-## Day 6 — (not yet)
+## Day 6 — 22 September 2026
+
+**Made the Windows install survivable, before attempting it.**
+
+Day 5 left Warden installable in principle but never run on Windows. Rather
+than install and debug blind, today went after the things most likely to break
+there.
+
+### Live data was going into OneDrive
+
+The installer wrote absolute database paths into the Claude Desktop config, and
+the project folder sits inside OneDrive. That put Warden's live SQLite files in
+a folder a sync tool copies and locks underneath it. The failure would not be
+obvious - it would surface later as Claude Desktop quietly losing its tools.
+
+Fixed with `warden/paths.py`. Live data now goes to the per-user application
+data folder (`%LOCALAPPDATA%\Warden` on Windows), which no sync tool touches.
+The policy file stays in the project folder, because that one is meant to be
+read, edited and committed.
+
+Knock-on fix: the report and summary would otherwise have shown demo runs while
+the real usage went elsewhere. Both now read live data when it exists, say which
+source they are showing, and take `--demo` for the project-folder databases.
+
+### A setup checker
+
+`python -m warden.doctor`, menu option 12. Reads and reports only, changes
+nothing. Checks Python version and path, PyYAML, the policy file, whether the
+data folder is writable and unsynced, Node and npx, and then the Claude Desktop
+config: whether it exists, whether it is valid JSON, whether Warden can write
+there, and for each configured server whether it is protectable, remote, or has
+a program that cannot be found.
+
+It catches the Microsoft Store Python specifically. Claude Desktop launches
+Warden by absolute path, and Store aliases usually fail when another program
+tries to run them - a failure that would otherwise look like Warden being broken.
+
+### A bug worth recording
+
+Making the data folder configurable started as a stale test, but the test was
+right and the code was wrong: `pin_tools` always wrote to the live data folder,
+so **running the test suite would have written mock-server entries into the
+user's real registry**. The data location is now injectable, tests pass a
+temporary folder, and a test run leaves live data untouched.
+
+Related, smaller: asking for a path was creating a folder. Path helpers are now
+side-effect free, and creation happens only where a database is opened.
+
+Tests: 74 to 82.
+
+**Still not done:** Warden has not run inside the real Claude Desktop app on
+Windows. Everything above makes that attempt more likely to succeed or to fail
+with a readable reason. The attempt itself is next.
+
+---
+
+## Day 7 — (not yet)
 
 Planned:
-1. Install Warden into Claude Desktop on Cooper's own Windows machine and use it.
-   This is the test that matters: the Windows fixes have not been observed on
-   Windows yet.
-2. A second real server that pushes `notifications/tools/list_changed`.
-3. Show it to one person who runs MCP servers.
+1. Option 12, then option 10, on the real machine. Use a protected server in
+   Claude Desktop and read the report afterwards.
+2. Whatever Windows breaks. Expect something.
+3. Then stop building and show it to one person who runs MCP servers.
 
 ---
 

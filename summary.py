@@ -16,6 +16,7 @@ import sys
 import time
 
 from warden.audit import AuditLog
+from warden.report import choose_source
 from warden.registry import ContractRegistry, QUARANTINED
 
 LINE = "-" * 74
@@ -74,9 +75,12 @@ def show_counts(audit: AuditLog) -> None:
 
 
 def main() -> None:
-    what = sys.argv[1].lower() if len(sys.argv) > 1 else "all"
-    registry = ContractRegistry()
-    audit = AuditLog()
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    what = args[0].lower() if args else "all"
+    reg_path, aud_path, label = choose_source("--demo" in sys.argv)
+    print(f"\n  Showing {label}")
+    registry = ContractRegistry(reg_path)
+    audit = AuditLog(aud_path)
 
     if what in ("all", "contracts"):
         show_contracts(registry)

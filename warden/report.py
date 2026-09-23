@@ -18,11 +18,13 @@ from __future__ import annotations
 import html
 import json
 import os
+import sys
 import time
 import webbrowser
 from pathlib import Path
 
 from .audit import AuditLog
+from .paths import audit_db, has_live_data, registry_db
 from .registry import QUARANTINED, ContractRegistry
 
 CSS = """
@@ -233,7 +235,7 @@ def render_diff(drift_json: str | None) -> str:
     return f'<div class="diff">{"".join(rows)}</div>' if rows else ""
 
 
-def build_html(registry: ContractRegistry, audit: AuditLog) -> str:
+def build_html(registry: ContractRegistry, audit: AuditLog, source: str = "") -> str:
     contracts = registry.all_contracts()
     quarantined = registry.quarantined()
     decisions = audit.recent(200)
@@ -318,7 +320,7 @@ def build_html(registry: ContractRegistry, audit: AuditLog) -> str:
 
   <div class="masthead">
     <h1>Warden register</h1>
-    <p>Tool contract enforcement for MCP &nbsp;|&nbsp; generated {when(time.time())}</p>
+    <p>Tool contract enforcement for MCP &nbsp;|&nbsp; generated {when(time.time())}{(" &nbsp;|&nbsp; " + esc(source)) if source else ""}</p>
   </div>
 
   {hero}
@@ -349,15 +351,31 @@ def build_html(registry: ContractRegistry, audit: AuditLog) -> str:
 </div></body></html>"""
 
 
+def choose_source(demo: bool = False) -> tuple[str, str, str]:
+    """
+    Which databases to read.
+
+    Live data - written while Claude Desktop actually used a protected server -
+    is what matters once Warden is installed, so it wins by default. The demos
+    write to the project folder instead, and --demo asks for those.
+
+    Returns (registry path, audit path, a label for the page).
+    """
+    if not demo and has_live_data():
+        return str(registry_db()), str(audit_db()), "live data"
+    return "warden_registry.db", "warden_audit.db", "demo runs in the project folder"
+
+
 def generate(
-    registry_db: str = "warden_registry.db",
-    audit_db: str = "warden_audit.db",
+    registry_db_path: str = "warden_registry.db",
+    audit_db_path: str = "warden_audit.db",
     out: str = "warden_report.html",
     open_browser: bool = True,
+    source: str = "",
 ) -> str:
-    registry = ContractRegistry(registry_db)
-    audit = AuditLog(audit_db)
-    markup = build_html(registry, audit)
+    registry = ContractRegistry(registry_db_path)
+    audit = AuditLog(audit_db_path)
+    markup = build_html(registry, audit, source)
     registry.close()
     audit.close()
 
@@ -374,5 +392,15 @@ def generate(
 
 
 if __name__ == "__main__":
-    location = generate(open_browser=bool(os.environ.get("WARDEN_OPEN", "1") == "1"))
-    print(f"Report written to {location}")
+    demo_mode = "--demo" in sys.argv
+    reg, aud, label = choose_source(demo_mode)
+    print(f"  Showing {label}")
+    print(f"  from {aud}")
+    location = generate(
+        reg, aud,
+        open_browser=bool(os.environ.get("WARDEN_OPEN", "1") == "1"),
+        source=label,
+    )
+    print(f"  Report written to {location}")
+    if not demo_mode and label == "live data":
+        print("  (run with --demo to see the demo runs instead)")

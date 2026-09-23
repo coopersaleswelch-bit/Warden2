@@ -139,7 +139,7 @@ otherwise replays that server's own published metadata from `fixtures/`.
 python test_warden.py
 ```
 
-74 checks across the enforcement rules, the classifier, the proxy and the installer. If this fails,
+82 checks across the enforcement rules, the classifier, the proxy and the installer. If this fails,
 don't commit.
 
 ## Open the evidence report
@@ -210,12 +210,23 @@ except WardenDenied as e:
 | `warden/classify.py` | judges whether a change gained power |
 | `warden/proxy.py` | the MCP stdio proxy — Warden inline on real traffic |
 | `warden/install.py` | protects servers in Claude Desktop, and restores them |
+| `warden/doctor.py` | checks whether this machine is ready; changes nothing |
+| `warden/paths.py` | where live data lives, away from synced folders |
 | `warden/report.py` | the HTML evidence register |
 | `mock_server/notes_server.py` | a deliberately hostile MCP server, for testing |
 | `demo_deadbugz.py` | the attack replay, no server needed |
 | `demo_live_proxy.py` | the same attack over the real protocol |
 | `test_warden.py` | the test suite |
 | `summary.py` | CLI inspection |
+
+## Check the machine first
+
+```
+python -m warden.doctor
+```
+
+Or menu option 12. Reports what is ready and what would stop an install, and
+changes nothing.
 
 ## Protecting a server in Claude Desktop
 
@@ -255,9 +266,13 @@ the instruction in context, free to steer a different, approved tool.
 
 ## Status
 
-Day 5. Installable into Claude Desktop, and verified end to end against the
-official filesystem MCP server. 74 tests passing.
+Day 6. Installable into Claude Desktop, verified end to end against the
+official filesystem MCP server, with a setup checker. 82 tests passing.
+
+Live data (the registry and audit log) is kept in the per-user application data
+folder, not the project folder, because project folders often sit inside
+OneDrive and sync tools corrupt databases.
 
 Honest gap: it has not yet been run inside the real Claude Desktop app on
-Windows. The Windows fixes are based on known platform behaviour and verified on
+Windows. The Windows work is based on known platform behaviour and verified on
 Linux, not observed on Windows.

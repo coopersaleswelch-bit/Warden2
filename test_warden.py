@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 from warden import ContractRegistry, Enforcer, ToolContract, WardenDenied
 from warden.audit import AuditLog
@@ -560,7 +561,7 @@ def test_installer_protects_and_restores():
     before = json.loads(config.read_text())["mcpServers"]["notes"]
     quiet = lambda *a, **k: None
 
-    protect("notes", config, home=home, sidecar=sidecar, out=quiet)
+    protect("notes", config, home=home, sidecar=sidecar, data=home, out=quiet)
     after = json.loads(config.read_text())
     entry = after["mcpServers"]["notes"]
 
@@ -603,24 +604,196 @@ def test_installer_refusals_change_nothing():
             check(name, config.read_bytes() == snapshot, "config was modified")
 
     refused("a remote server is refused and the config left alone",
-            lambda: protect("remote", config, home=home, sidecar=sidecar, out=quiet))
+            lambda: protect("remote", config, home=home, sidecar=sidecar, data=home, out=quiet))
     refused("an unknown server is refused and the config left alone",
-            lambda: protect("nope", config, home=home, sidecar=sidecar, out=quiet))
+            lambda: protect("nope", config, home=home, sidecar=sidecar, data=home, out=quiet))
 
     # a server that cannot start must never leave a half-protected config
     data = json.loads(config.read_text())
     data["mcpServers"]["broken"] = {"command": "definitely-not-a-real-program-xyz"}
     config.write_text(json.dumps(data))
     refused("a server that will not start leaves the config unchanged",
-            lambda: protect("broken", config, home=home, sidecar=sidecar, out=quiet))
+            lambda: protect("broken", config, home=home, sidecar=sidecar, data=home, out=quiet))
 
-    protect("notes", config, home=home, sidecar=sidecar, out=quiet)
+    protect("notes", config, home=home, sidecar=sidecar, data=home, out=quiet)
     refused("protecting twice is refused",
-            lambda: protect("notes", config, home=home, sidecar=sidecar, out=quiet))
+            lambda: protect("notes", config, home=home, sidecar=sidecar, data=home, out=quiet))
 
     config.write_text('{"mcpServers": {')
     refused("an invalid config file is refused, not repaired",
-            lambda: protect("notes", config, home=home, sidecar=sidecar, out=quiet))
+            lambda: protect("notes", config, home=home, sidecar=sidecar, data=home, out=quiet))
+
+
+def test_live_data_is_kept_out_of_synced_folders():
+    """
+    Day 6 finding: the installer baked database paths into the Claude Desktop
+    config. A project folder in OneDrive meant live SQLite files in a folder a
+    sync tool copies and locks underneath you.
+    """
+    from pathlib import Path as P
+    from warden.paths import data_dir, is_in_sync_folder
+
+    check("a OneDrive path is recognised as synced",
+          is_in_sync_folder(P(r"C:\Users\Cooper Welch\OneDrive\Desktop\WARDEN")) == "onedrive")
+    check("a Dropbox path is recognised as synced",
+          is_in_sync_folder(P("/home/x/Dropbox/warden")) == "dropbox")
+    check("an ordinary path is not flagged",
+          is_in_sync_folder(P("/home/x/projects/warden")) is None)
+    check("the live data folder is not inside a sync folder",
+          is_in_sync_folder(data_dir()) is None, str(data_dir()))
+
+
+def test_protected_entry_points_at_live_data():
+    from warden.install import wrap_entry
+    from warden.paths import audit_db, registry_db
+
+    entry = {"command": "node", "args": ["server.js"]}
+    wrapped = wrap_entry("x", entry, home=Path(tempfile.mkdtemp()))  # live paths
+    args = wrapped["args"]
+
+    check("the registry path is the live one",
+          args[args.index("--registry-db") + 1] == str(registry_db()))
+    check("the audit path is the live one",
+          args[args.index("--audit-db") + 1] == str(audit_db()))
+    check("both live paths are absolute",
+          os.path.isabs(args[args.index("--audit-db") + 1]))
+
+
+def test_report_prefers_live_data_when_it_exists():
+    from warden.report import choose_source
+
+    label_demo = choose_source(demo=True)[2]
+    check("--demo always reads the project folder",
+          "project folder" in label_demo, label_demo)
+
+
+def test_write_probe_closes_its_handle():
+    """
+    Day 6 finding, from Cooper's Windows machine: the setup check created a
+    test file with mkstemp and deleted it without closing the handle. Linux
+    allows deleting an open file; Windows raises WinError 32, so the check
+    reported that a perfectly writable folder was not writable.
+    """
+    from warden.doctor import write_probe
+
+    folder = Path(tempfile.mkdtemp())
+    check("a writable folder reports no problem", write_probe(folder) is None)
+    check("the probe leaves nothing behind", list(folder.iterdir()) == [],
+          str(list(folder.iterdir())))
+    check("a second run also succeeds", write_probe(folder) is None)
+
+    missing = write_probe(Path(folder) / "does" / "not" / "exist")
+    check("an unwritable folder reports why", isinstance(missing, str) and missing)
+
+
+def test_finds_packaged_claude_desktop_config():
+    """
+    Day 6, from Cooper's machine: Claude Desktop was installed and working, but
+    Warden reported "no config file". A packaged (MSIX/Store-style) install is
+    sandboxed, and Windows redirects its settings into
+    %LOCALAPPDATA%\\Packages\\Claude_<id>\\LocalCache\\Roaming\\Claude, where
+    <id> differs per machine. Warden only looked at %APPDATA%\\Claude.
+    """
+    import sys as _sys
+    import warden.install as I
+
+    root = Path(tempfile.mkdtemp())
+    roaming = root / "Roaming"
+    packaged = (root / "Local" / "Packages" / "Claude_pzs8sxrjxfjjc"
+                / "LocalCache" / "Roaming" / "Claude")
+    packaged.mkdir(parents=True)
+    (packaged / "claude_desktop_config.json").write_text('{"mcpServers": {}}')
+
+    real_platform = _sys.platform
+    real_appdata = os.environ.get("APPDATA")
+    real_local = os.environ.get("LOCALAPPDATA")
+    try:
+        _sys.platform = "win32"
+        os.environ["APPDATA"] = str(roaming)
+        os.environ["LOCALAPPDATA"] = str(root / "Local")
+
+        candidates = I.config_candidates()
+        check("the classic location is still checked first",
+              str(candidates[0]).startswith(str(roaming)), str(candidates[0]))
+        check("the packaged location is also checked",
+              any("Packages" in str(c) for c in candidates), str(candidates))
+
+        chosen = I.default_config_path()
+        check("an existing packaged config is chosen over a missing classic one",
+              chosen.exists() and "Packages" in str(chosen), str(chosen))
+        check("a packaged location is recognised as such",
+              I.is_packaged_location(chosen))
+        check("a classic location is not flagged as packaged",
+              not I.is_packaged_location(roaming / "Claude" / "x.json"))
+
+        # with nothing anywhere, fall back to the classic path so the user is
+        # told where to create one rather than shown an error with no action
+        for stray in packaged.glob("*.json"):
+            stray.unlink()
+        fallback = I.default_config_path()
+        check("with no config anywhere, the classic path is offered",
+              str(fallback).startswith(str(roaming)), str(fallback))
+    finally:
+        _sys.platform = real_platform
+        for key, value in (("APPDATA", real_appdata), ("LOCALAPPDATA", real_local)):
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def test_schema_dialect_shim():
+    """
+    Day 6, from Cooper's machine: Claude Desktop refused every tool because the
+    server declared JSON Schema draft-07 and the client validates 2020-12 only.
+    Every official MCP server declares draft-07, so no choice of server avoids
+    it. Warden drops just the dialect declaration on the way to the client.
+    """
+    from warden.proxy import WardenProxy, contract_from_mcp_tool, sanitize_for_client
+
+    tool = {
+        "name": "read_text_file",
+        "description": "Read a file.",
+        "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+        },
+        "outputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {"content": {"type": "string"}},
+        },
+        "annotations": {"readOnlyHint": True},
+    }
+
+    cleaned, changed = sanitize_for_client(tool, "strip_dialect")
+    check("the dialect declaration is removed", changed and "draft-07" not in str(cleaned))
+    check("the rest of the schema survives",
+          cleaned["inputSchema"]["properties"] == {"path": {"type": "string"}})
+    check("the output schema survives",
+          "content" in cleaned["outputSchema"]["properties"])
+    check("nothing else about the tool changes",
+          cleaned["name"] == tool["name"]
+          and cleaned["description"] == tool["description"]
+          and cleaned["annotations"] == tool["annotations"])
+
+    untouched, unchanged = sanitize_for_client(tool, "off")
+    check("mode off leaves the tool alone", untouched == tool and not unchanged)
+
+    # The important property: Warden pins what the SERVER said, not what it
+    # forwarded, so a server that keeps sending draft-07 must not look drifted.
+    e, _ = make_enforcer()
+    e.approve(contract_from_mcp_tool("s", tool))
+    proxy = WardenProxy("echo noop", "s", e, discover=False)
+
+    served = proxy.inspect_tool_list([tool])
+    check("the client is served the cleaned definition",
+          served and "draft-07" not in str(served))
+    check("the same tool a second time is not treated as drift",
+          e.check(contract_from_mcp_tool("s", tool), {"path": "x"}).allowed)
+    check("the tool is still approved, not quarantined",
+          not e.registry.is_quarantined("s", "read_text_file"))
 
 
 def main() -> None:
@@ -650,6 +823,12 @@ def main() -> None:
         test_windows_paths_survive_launch,
         test_installer_protects_and_restores,
         test_installer_refusals_change_nothing,
+        test_live_data_is_kept_out_of_synced_folders,
+        test_protected_entry_points_at_live_data,
+        test_report_prefers_live_data_when_it_exists,
+        test_write_probe_closes_its_handle,
+        test_finds_packaged_claude_desktop_config,
+        test_schema_dialect_shim,
     ]:
         print(f"\n{fn.__name__}")
         fn()

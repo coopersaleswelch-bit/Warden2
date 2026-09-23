@@ -28,6 +28,14 @@ DEFAULT_POLICY: dict[str, Any] = {
         #            still refused. Keeps the client's view stable.
         # Either way the poisoned description never reaches the model.
         "quarantined_tool_view": "hide",
+
+        # Some clients reject a tool whose schema declares JSON Schema draft-07,
+        # which every official MCP server currently does. strip_dialect removes
+        # only the "$schema" declaration on the way to the client, so the client
+        # uses its own default. The pinned contract keeps the server's original,
+        # so drift detection is unaffected.
+        #   strip_dialect | off
+        "client_schema_compatibility": "strip_dialect",
         "baseline_calls": 3,          # calls before arg-shape baseline is trusted
 
         # Risk-aware drift handling. Each may be quarantine | block | warn.

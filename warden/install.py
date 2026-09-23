@@ -44,6 +44,7 @@ from typing import Any
 
 from .audit import AuditLog
 from .enforcer import Enforcer
+from .paths import audit_db, ensure_data_dir, registry_db
 from .policy import load_policy
 from .proxy import contract_from_mcp_tool, resolve_executable
 from .registry import ContractRegistry
@@ -62,19 +63,69 @@ class InstallError(Exception):
 # Locating and reading the Claude Desktop config
 # ---------------------------------------------------------------------------
 
-def default_config_path() -> Path:
-    """Where Claude Desktop keeps its MCP server config on this OS."""
+def config_candidates() -> list[Path]:
+    """
+    Every place Claude Desktop might keep claude_desktop_config.json, best first.
+
+    On Windows there are two. A normal install writes to %APPDATA%\\Claude. A
+    packaged (MSIX/Store) install is sandboxed, and Windows silently redirects
+    its %APPDATA% writes into
+
+        %LOCALAPPDATA%\\Packages\\Claude_<id>\\LocalCache\\Roaming\\Claude
+
+    where <id> differs per machine. The app reads that folder as its own
+    %APPDATA%, so writing there is what it actually sees. Warden used to check
+    only the classic path and reported "no config" on a perfectly working
+    packaged install.
+    """
+    name = "claude_desktop_config.json"
+
     if sys.platform == "win32":
+        found: list[Path] = []
+
         appdata = os.environ.get("APPDATA")
-        if not appdata:
-            raise InstallError("APPDATA is not set, so the Claude config cannot be found.")
-        return Path(appdata) / "Claude" / "claude_desktop_config.json"
+        if appdata:
+            found.append(Path(appdata) / "Claude" / name)
+
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            packages = Path(local) / "Packages"
+            if packages.is_dir():
+                for package in sorted(packages.glob("Claude_*")):
+                    found.append(
+                        package / "LocalCache" / "Roaming" / "Claude" / name
+                    )
+        if not found:
+            raise InstallError(
+                "Neither APPDATA nor LOCALAPPDATA is set, so the Claude config "
+                "cannot be found."
+            )
+        return found
+
     if sys.platform == "darwin":
-        return (
-            Path.home() / "Library" / "Application Support" / "Claude"
-            / "claude_desktop_config.json"
-        )
-    return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+        return [Path.home() / "Library" / "Application Support" / "Claude" / name]
+
+    return [Path.home() / ".config" / "Claude" / name]
+
+
+def default_config_path() -> Path:
+    """
+    The config to use: the first candidate that exists, otherwise the first.
+
+    Returning a non-existent path rather than failing lets the caller give the
+    user a location to create, instead of an error with nothing to act on.
+    """
+    candidates = config_candidates()
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
+
+
+def is_packaged_location(path: Path) -> bool:
+    """True when this config belongs to a sandboxed (packaged) install."""
+    lowered = str(path).lower()
+    return "\\packages\\" in lowered or "/packages/" in lowered
 
 
 def load_config(path: Path) -> dict:
@@ -153,7 +204,12 @@ def server_argv(entry: dict) -> list[str]:
     return [entry["command"], *[str(a) for a in (entry.get("args") or [])]]
 
 
-def wrap_entry(name: str, entry: dict, home: Path = WARDEN_HOME) -> dict:
+def wrap_entry(
+    name: str,
+    entry: dict,
+    home: Path = WARDEN_HOME,
+    data: Path | None = None,
+) -> dict:
     """
     Build the entry that makes Claude Desktop launch Warden in front of a server.
 
@@ -175,8 +231,11 @@ def wrap_entry(name: str, entry: dict, home: Path = WARDEN_HOME) -> dict:
         "-m", "warden.proxy",
         "--name", name,
         "--policy", str(home / "policy.yaml"),
-        "--registry-db", str(home / "warden_registry.db"),
-        "--audit-db", str(home / "warden_audit.db"),
+        # Live databases go outside the project folder. A project folder often
+        # sits in OneDrive, and a sync tool copying a SQLite file mid-write
+        # breaks it in ways that surface much later.
+        "--registry-db", str(data / "warden_registry.db" if data else registry_db()),
+        "--audit-db", str(data / "warden_audit.db" if data else audit_db()),
         "--",
         *server_argv(entry),
     ]
@@ -274,12 +333,28 @@ def discover(entry: dict, timeout: float = DISCOVERY_TIMEOUT_S) -> Discovery:
     return Discovery(server_info=info, tools=tools)
 
 
-def pin_tools(name: str, found: Discovery, home: Path = WARDEN_HOME) -> list:
-    """Record every discovered tool as its approved contract."""
+def pin_tools(
+    name: str,
+    found: Discovery,
+    home: Path = WARDEN_HOME,
+    data: Path | None = None,
+) -> list:
+    """
+    Record every discovered tool as its approved contract.
+
+    `data` overrides where the databases live. Tests pass a temporary folder so
+    a test run never writes into the user's real registry.
+    """
+    if data:
+        data.mkdir(parents=True, exist_ok=True)
+        reg, aud = data / "warden_registry.db", data / "warden_audit.db"
+    else:
+        ensure_data_dir()
+        reg, aud = registry_db(), audit_db()
     enforcer = Enforcer(
-        ContractRegistry(home / "warden_registry.db"),
+        ContractRegistry(reg),
         load_policy(home / "policy.yaml"),
-        AuditLog(home / "warden_audit.db"),
+        AuditLog(aud),
         session="install",
     )
     try:
@@ -313,6 +388,7 @@ def _inspect_and_wrap(
     *,
     print_only: bool,
     home: Path,
+    data: Path | None,
     out,
 ) -> dict | None:
     """
@@ -320,7 +396,7 @@ def _inspect_and_wrap(
     return the wrapped entry. Returns None in print-only mode, having shown
     what would be written.
     """
-    wrapped = wrap_entry(name, entry, home)
+    wrapped = wrap_entry(name, entry, home, data)
 
     out(f"\n  Inspecting '{name}'...")
     found = discover(entry)
@@ -335,7 +411,7 @@ def _inspect_and_wrap(
         out(json.dumps({"mcpServers": {name: wrapped}}, indent=2))
         return None
 
-    contracts = pin_tools(name, found, home)
+    contracts = pin_tools(name, found, home, data)
     out(f"  Pinned {len(contracts)} tools as approved:\n")
     for c in contracts:
         out(f"    {c.tool:<28} {describe_access(c)}")
@@ -371,6 +447,7 @@ def protect(
     print_only: bool = False,
     home: Path = WARDEN_HOME,
     sidecar: Path = SIDECAR,
+    data: Path | None = None,
     out=print,
 ) -> None:
     """Put Warden in front of a server that is already configured."""
@@ -379,7 +456,7 @@ def protect(
         raise InstallError(f"There is no server called '{name}' in {config_path}.")
 
     original = config["mcpServers"][name]
-    wrapped = _inspect_and_wrap(name, original, print_only=print_only, home=home, out=out)
+    wrapped = _inspect_and_wrap(name, original, print_only=print_only, home=home, data=data, out=out)
     if wrapped is not None:
         _commit(name, original, wrapped, config, config_path, sidecar=sidecar, out=out)
 
@@ -392,6 +469,7 @@ def add(
     print_only: bool = False,
     home: Path = WARDEN_HOME,
     sidecar: Path = SIDECAR,
+    data: Path | None = None,
     out=print,
 ) -> None:
     """Add a brand-new server that is protected from the start."""
@@ -402,7 +480,7 @@ def add(
         raise InstallError(f"A server called '{name}' already exists. Pick another name.")
 
     original = {"command": argv[0], "args": argv[1:]}
-    wrapped = _inspect_and_wrap(name, original, print_only=print_only, home=home, out=out)
+    wrapped = _inspect_and_wrap(name, original, print_only=print_only, home=home, data=data, out=out)
     if wrapped is not None:
         _commit(name, original, wrapped, config, config_path, sidecar=sidecar, out=out)
 
