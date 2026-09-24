@@ -1,8 +1,8 @@
 WARDEN DAY 7
 ============
 
-Day 7 written up in PROGRESS.md, plus better error messages when a server
-fails to start.
+New: menu option 13 sets up a REAL refusal you can screenshot. Option 14
+puts everything back.
 
 
 1. Copy WARDEN-DAY7-FILES out of the zip onto your Desktop.
@@ -11,6 +11,5 @@ fails to start.
 4. Folders -> Yes / Merge.  Files -> Replace the files in the destination.
 5. Delete WARDEN-DAY7-FILES from your Desktop.
 6. Double-click START WARDEN.bat, press 2.  You want: 105 passed, 0 failed
-7. Double-click PUSH TO GITHUB.bat to save.
-
-Then see the chat for how to make Warden refuse something for real.
+7. Press 13. It does everything for you and tells you what to do next.
+8. Double-click PUSH TO GITHUB.bat to save.

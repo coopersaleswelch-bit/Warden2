@@ -69,6 +69,9 @@ echo    10   Protect          put Warden in front of a Claude Desktop server
 echo    11   Unprotect        put a server back exactly as it was
 echo    12   Check setup      is this machine ready? changes nothing
 echo.
+echo    13   Live refusal     set up a real block you can screenshot
+echo    14   Undo 13          put the policy and config back
+echo.
 echo     0   Quit
 echo.
 set "choice="
@@ -86,6 +89,8 @@ if "%choice%"=="9" goto RESET
 if "%choice%"=="10" goto PROTECT
 if "%choice%"=="11" goto UNPROTECT
 if "%choice%"=="12" goto DOCTOR
+if "%choice%"=="13" goto LIVEDEMO
+if "%choice%"=="14" goto LIVEUNDO
 if "%choice%"=="0" goto END
 goto MENU
 
@@ -156,6 +161,28 @@ echo   Warden against @modelcontextprotocol/server-filesystem - the official
 echo   server, written by people who never heard of Warden.
 echo.
 !PY! demo_day4.py
+echo.
+pause
+goto MENU
+
+:LIVEDEMO
+cls
+echo.
+echo   This makes a folder, turns on a rule that forbids destructive tools,
+echo   and protects a server pointed at that folder.
+echo.
+echo   Afterwards, reading a file works and writing one is refused.
+echo   Option 14 puts everything back.
+echo.
+!PY! -m warden.live_demo
+echo.
+pause
+goto MENU
+
+:LIVEUNDO
+cls
+echo.
+!PY! -m warden.live_demo --undo
 echo.
 pause
 goto MENU
