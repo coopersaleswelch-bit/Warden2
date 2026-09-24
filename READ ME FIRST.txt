@@ -1,16 +1,16 @@
-WARDEN - SCHEMA FIX
-===================
+WARDEN DAY 7
+============
 
-Fixes the "invalid outputSchema / unsupported dialect" error that stopped
-Claude Desktop using the files connector.
+Day 7 written up in PROGRESS.md, plus better error messages when a server
+fails to start.
 
 
-1. Copy WARDEN-DAY6-FILES out of the zip onto your Desktop.
+1. Copy WARDEN-DAY7-FILES out of the zip onto your Desktop.
 2. Open it. Ctrl+A, then Ctrl+C.
 3. Open WARDEN-SEPT15. Ctrl+V.
 4. Folders -> Yes / Merge.  Files -> Replace the files in the destination.
-5. Delete WARDEN-DAY6-FILES from your Desktop.
-6. Double-click START WARDEN.bat, press 2.  You want: 100 passed, 0 failed
-7. Quit Claude Desktop from the system tray (Exit), then open it again.
-8. New chat. Ask it to use the files connector to read note.txt.
-9. Then press 7 in the menu for the report.
+5. Delete WARDEN-DAY7-FILES from your Desktop.
+6. Double-click START WARDEN.bat, press 2.  You want: 105 passed, 0 failed
+7. Double-click PUSH TO GITHUB.bat to save.
+
+Then see the chat for how to make Warden refuse something for real.

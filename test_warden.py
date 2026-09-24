@@ -796,6 +796,41 @@ def test_schema_dialect_shim():
           not e.registry.is_quarantined("s", "read_text_file"))
 
 
+def test_failure_message_surfaces_the_real_error():
+    """
+    Day 7: when a server would not start, Warden showed npm's changelog notice
+    instead of the actual reason. Package managers write their notices last, so
+    taking the final lines of stderr shows noise and buries the failure.
+    """
+    from warden.install import explain_server_failure
+
+    class Result:
+        def __init__(self, returncode, stderr):
+            self.returncode, self.stderr = returncode, stderr
+
+    noisy = Result(1, "\n".join([
+        "Error: Directory C:\\Users\\x\\missing does not exist",
+        "npm notice",
+        "npm notice New major version of npm available! 12.0.1",
+        "npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.1.0",
+        "npm notice To update run: npm install -g npm@12.1.0",
+    ]))
+    message = explain_server_failure(noisy, {})
+    check("the real error is shown", "does not exist" in message, message)
+    check("npm noise is not shown", "changelog" not in message.lower(), message)
+    check("the exit code is reported", "code 1" in message, message)
+
+    rpc = explain_server_failure(
+        Result(0, ""), {2: {"error": {"code": -32601, "message": "method not found"}}}
+    )
+    check("a protocol error is reported as such",
+          "method not found" in rpc and "-32601" in rpc, rpc)
+
+    silent = explain_server_failure(Result(0, ""), {})
+    check("a silent server is described, not blamed vaguely",
+          "never answered" in silent, silent)
+
+
 def main() -> None:
     print("\nWarden 2.0 test suite")
     print("-" * 74)
@@ -829,6 +864,7 @@ def main() -> None:
         test_write_probe_closes_its_handle,
         test_finds_packaged_claude_desktop_config,
         test_schema_dialect_shim,
+        test_failure_message_surfaces_the_real_error,
     ]:
         print(f"\n{fn.__name__}")
         fn()

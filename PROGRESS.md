@@ -358,13 +358,91 @@ with a readable reason. The attempt itself is next.
 
 ---
 
-## Day 7 — (not yet)
+## Day 7 — 23 September 2026
+
+**Warden ran inside the real Claude Desktop app, and stopped being a project.**
+
+Everything before today was Warden in front of a server I launched myself, on
+Linux. Today it ran where it is meant to run: installed into Claude Desktop on
+Cooper's Windows machine, mediating tool calls a person actually made.
+
+It works. A filesystem server named `files` is protected, 14 tools pinned, and
+the report shows real decisions from real usage rather than a demo.
+
+Getting there took three bugs, none of which could have been found on Linux.
+
+### 1. The setup check said a writable folder was not writable
+
+`tempfile.mkstemp` returns an OPEN file handle. The check deleted the file
+without closing it. Linux allows deleting an open file; Windows raises
+WinError 32. So Warden reported that `%LOCALAPPDATA%` — always writable —
+could not be written to.
+
+Fixed by extracting one `write_probe()` that closes the handle before
+unlinking, used in both places rather than fixing the same mistake twice.
+
+### 2. Claude Desktop's config was somewhere undocumented
+
+The app was installed and working, and Warden reported "no config file". The
+install is packaged (MSIX-style), so Windows redirects its settings into
+
+    %LOCALAPPDATA%\Packages\Claude_<random id>\LocalCache\Roaming\Claude
+
+with an id that differs per machine. Warden only knew about `%APPDATA%\Claude`.
+Found by searching the filesystem for the filename, not by reading docs.
+
+Warden now checks every candidate location, prefers whichever exists, and says
+which it found. Along the way I proposed a redirection theory for a *different*
+symptom, tested it, and it was wrong — worth recording, because shipping that
+fix would have chased a cause that did not exist.
+
+### 3. Every official MCP server declares a schema dialect this client rejects
+
+Claude Desktop refused every tool:
+
+    invalid outputSchema: unsupported dialect ("$schema": draft-07).
+    The default validator supports JSON Schema 2020-12 only
+
+Checked four official servers — filesystem, memory, everything,
+sequential-thinking, all v2026.8.31 — and **every one declares draft-07 in all
+of its tools**. So this is not Warden's doing and no choice of server avoids it.
+Without Warden in the path the client fails identically.
+
+Warden now removes just the `$schema` declaration on the way to the client, so
+the client falls back to its own default. This is the one place Warden alters
+what a server said, so it is deliberately narrow, logged, and configurable.
+
+The important part is what it does NOT change: the pinned contract still holds
+the server's original definition. Warden compares the server against what the
+server said, not against what it forwarded. There is a test asserting exactly
+that, because a shortcut there would quietly blind the thing Warden exists to do.
+
+### Also worth recording
+
+A false positive that looked like success: an early test read a file correctly
+and the report showed 0 decisions. Claude Desktop had answered with its own
+built-in file access, not the protected server. The empty report was right and
+the "working" read proved nothing. Reading the client's own log — which shows
+`tools/list` arriving but no `tools/call` — is what settled it.
+
+Tests: 92 to 100.
+
+**State:** installed, running, audited, and pushed to GitHub.
+
+**Not done:** Warden has never refused anything from a real server in live use.
+Every refusal so far is from demos. Untested against servers that push
+`tools/list_changed` mid-session, and against HTTP transport.
+
+---
+
+## Day 8 — (not yet)
 
 Planned:
-1. Option 12, then option 10, on the real machine. Use a protected server in
-   Claude Desktop and read the report afterwards.
-2. Whatever Windows breaks. Expect something.
-3. Then stop building and show it to one person who runs MCP servers.
+1. Produce one real refusal from live usage. Change something about a protected
+   server, restart, and catch it against live data. That screenshot is the demo.
+2. Improve the error a failed inspection gives. When the server could not start,
+   Warden showed npm's changelog notice instead of the actual reason.
+3. Then stop building. Show it to one person who runs MCP servers.
 
 ---
 

@@ -269,6 +269,52 @@ def save_sidecar(data: dict, path: Path = SIDECAR) -> None:
 # Discovery: inspect the server and pin what it offers
 # ---------------------------------------------------------------------------
 
+NOISE_MARKERS = (
+    "npm notice", "npm warn", "npm info", "changelog:", "to update run",
+    "new major version", "deprecated",
+)
+
+ERROR_MARKERS = (
+    "error", "enoent", "eacces", "not found", "cannot", "can't", "unable",
+    "denied", "refused", "invalid", "does not exist", "no such", "failed",
+    "traceback", "exception", "permission",
+)
+
+
+def explain_server_failure(result, replies: dict) -> str:
+    """
+    Say why a server did not produce a tool list, in the user's words.
+
+    The naive version printed the last few lines of stderr. Package managers
+    write their own notices last, so a real failure - a missing directory, a
+    crash - scrolls out of view and the user is shown a changelog URL instead.
+    That happened on the first real install and cost real time.
+
+    So: drop known noise, prefer lines that look like errors, and say plainly
+    whether the process died or merely answered unhelpfully.
+    """
+    lines = [l.strip() for l in (result.stderr or "").splitlines() if l.strip()]
+    signal = [l for l in lines if not any(n in l.lower() for n in NOISE_MARKERS)]
+    errors = [l for l in signal if any(m in l.lower() for m in ERROR_MARKERS)]
+    chosen = errors[:3] or signal[-3:]
+
+    if result.returncode != 0:
+        head = (f"The server exited with code {result.returncode} instead of "
+                f"listing its tools.")
+    elif not replies:
+        head = "The server started but never answered. It may not speak MCP over stdio."
+    else:
+        rpc = (replies.get(2) or {}).get("error") or (replies.get(1) or {}).get("error")
+        if rpc:
+            return (f"The server refused the request: "
+                    f"{rpc.get('message', 'no message')} (code {rpc.get('code')}).")
+        head = "The server started but did not return a tool list."
+
+    if not chosen:
+        return head + "\n  It printed nothing useful."
+    return head + "\n  It said:\n    " + "\n    ".join(chosen)
+
+
 @dataclass
 class Discovery:
     server_info: dict
@@ -322,11 +368,7 @@ def discover(entry: dict, timeout: float = DISCOVERY_TIMEOUT_S) -> Discovery:
             replies[msg["id"]] = msg
 
     if 2 not in replies or "result" not in replies[2]:
-        detail = (result.stderr or "").strip().splitlines()[-3:]
-        raise InstallError(
-            "The server started but did not return a tool list."
-            + (f"\n  It said: {' | '.join(detail)}" if detail else "")
-        )
+        raise InstallError(explain_server_failure(result, replies))
 
     info = (replies.get(1, {}).get("result") or {}).get("serverInfo") or {}
     tools = replies[2]["result"].get("tools") or []
