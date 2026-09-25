@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Warden">
+  <polygon points="50,3 93,15 93,45 84,68 50,97 16,68 7,45 7,15" fill="#0d2233" stroke="#d8a244" stroke-width="3"/>
+  <polygon points="50,3 7,15 7,45 16,68 50,97" fill="#163449"/>
+  <polygon points="50,10 87,20 87,44 79,64 50,89 21,64 13,44 13,20" fill="none" stroke="#3d6076" stroke-width="1"/>
+  <polygon points="18,38 82,38 78,44 22,44" fill="#0b1c29"/>
+  <polygon points="20,46 80,46 76,64 24,64" fill="#d8a244"/>
+  <polygon points="26,51 74,51 71,59 29,59" fill="#0b1c29"/>
+  <rect x="44" y="51" width="12" height="8" fill="#f0c070"/>
+  <rect x="38" y="70" width="4" height="9" fill="#b5822a"/>
+  <rect x="48" y="70" width="4" height="11" fill="#b5822a"/>
+  <rect x="58" y="70" width="4" height="9" fill="#b5822a"/>
+</svg>

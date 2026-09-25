@@ -466,11 +466,39 @@ Tests: 105 to 110.
 
 ---
 
-## Day 9 — (not yet)
+## Day 9 — 25 September 2026
+
+**Rewrote the README for a stranger instead of for me.**
+
+The old one was a build journal: 278 lines, opening with a comparative claim
+about other products, and burying the only thing that actually persuades anyone
+— that Warden runs live and has refused a real action.
+
+The new one is 169 lines and front-loads four things: what breaks, what Warden
+does about it, proof it runs, and how to try it in two minutes. The real
+refusal from live use is quoted verbatim, arguments and all.
+
+Two details worth recording:
+
+- GitHub strips inline SVG from markdown, so the mark is now a real file at
+  `docs/warden-mark.svg` and referenced with an `img` tag.
+- The quickstart originally said `pip install -r requirements.txt`. Modern
+  Python refuses that outside a virtual environment (PEP 668), so a stranger's
+  very first command would have failed. It now creates a venv first, and I
+  verified the whole sequence inside a clean one.
+
+Added a "what it doesn't do yet" section: stdio only, untested against
+`tools/list_changed`, one real server, version trust off by default. Engineers
+trust a README that admits its edges more than one that doesn't have any.
+
+The old README is kept as `docs/README-buildnotes.md`.
+
+---
+
+## Day 10 — (not yet)
 
 Planned:
-1. Stop building. Show it to one person who runs MCP servers.
-2. Only then: servers that push `tools/list_changed`, and HTTP transport.
+1. Show it to one person who runs MCP servers.
 
 ---
 

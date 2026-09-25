@@ -1,15 +1,16 @@
-WARDEN DAY 8
+WARDEN DAY 9
 ============
 
-The report page now looks like Warden - navy, brass, the sentinel mark in the
-header. Plus a fix: a refusal can no longer be labelled "all clear".
+New README written for strangers, plus the logo as a file GitHub can show.
+The old README is kept at docs\README-buildnotes.md.
 
 
-1. Copy WARDEN-DAY8-FILES out of the zip onto your Desktop.
+1. Copy WARDEN-DAY9-FILES out of the zip onto your Desktop.
 2. Open it. Ctrl+A, then Ctrl+C.
 3. Open WARDEN-SEPT15. Ctrl+V.
 4. Folders -> Yes / Merge.  Files -> Replace the files in the destination.
-5. Delete WARDEN-DAY8-FILES from your Desktop.
+5. Delete WARDEN-DAY9-FILES from your Desktop.
 6. Double-click START WARDEN.bat, press 2.  You want: 110 passed, 0 failed
-7. Press 7 to see the new report.
-8. Double-click PUSH TO GITHUB.bat to save.
+7. Double-click PUSH TO GITHUB.bat.
+8. Go to github.com/coopersaleswelch-bit/Warden2 and look at the front page.
+   That is what a stranger sees.
