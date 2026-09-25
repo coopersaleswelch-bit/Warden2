@@ -27,155 +27,145 @@ from .audit import AuditLog
 from .paths import audit_db, has_live_data, registry_db
 from .registry import QUARANTINED, ContractRegistry
 
+# The Warden mark. Two sizes: the header version keeps the ridge and grille,
+# the small version drops them because detail that reads at 250px turns to mud
+# at 16px. A logo is a family, not one drawing.
+MARK_FULL = """<svg viewBox="0 0 100 100" width="46" height="46" aria-label="Warden">
+<polygon points="50,3 93,15 93,45 84,68 50,97 16,68 7,45 7,15" fill="#0d2233" stroke="#d8a244" stroke-width="3"/>
+<polygon points="50,3 7,15 7,45 16,68 50,97" fill="#163449"/>
+<polygon points="18,38 82,38 78,44 22,44" fill="#0b1c29"/>
+<polygon points="20,46 80,46 76,64 24,64" fill="#d8a244"/>
+<polygon points="26,51 74,51 71,59 29,59" fill="#0b1c29"/>
+<rect x="44" y="51" width="12" height="8" fill="#f0c070"/>
+<rect x="38" y="70" width="4" height="9" fill="#b5822a"/>
+<rect x="48" y="70" width="4" height="11" fill="#b5822a"/>
+<rect x="58" y="70" width="4" height="9" fill="#b5822a"/>
+</svg>"""
+
+FAVICON = (
+    "data:image/svg+xml;utf8,"
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
+    "<polygon points='50,3 93,15 93,45 84,68 50,97 16,68 7,45 7,15' fill='%230b1c29'/>"
+    "<polygon points='18,44 82,44 78,66 22,66' fill='%23d8a244'/>"
+    "<polygon points='24,50 76,50 73,60 27,60' fill='%230b1c29'/>"
+    "<rect x='42' y='50' width='16' height='10' fill='%23f0c070'/></svg>"
+)
+
 CSS = """
 :root {
-  --ink: #1b2a33;
-  --ink-soft: #52646f;
-  --rule: #d6dde2;
-  --panel: #eef2f5;
-  --paper: #ffffff;
-  --allow: #2f6f4f;
-  --deny: #a1231f;
-  --drift: #9a6410;
+  --hull: #0b1c29;
+  --panel: #12293a;
+  --facet: #163449;
+  --edge: #27455a;
+  --brass: #d8a244;
+  --brass-deep: #b5822a;
+  --optic: #f0c070;
+  --bone: #f4f0e8;
+  --dim: #9fb2be;
+  --deny: #e0685c;
+  --allow: #7fc8a0;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: var(--panel);
-  color: var(--ink);
-  font-family: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
-  font-size: 17px;
+  background: var(--hull);
+  color: var(--bone);
+  font-family: Archivo, "Segoe UI", system-ui, sans-serif;
+  font-size: 16px;
   line-height: 1.55;
 }
 
-.sheet {
-  max-width: 62rem;
-  margin: 0 auto;
-  background: var(--paper);
-  min-height: 100vh;
-  padding: 3.5rem 3rem 5rem;
-  border-left: 1px solid var(--rule);
-  border-right: 1px solid var(--rule);
-}
+.sheet { max-width: 64rem; margin: 0 auto; padding: 3rem 2.5rem 5rem; }
 
 .mono {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.82em;
-  letter-spacing: -0.01em;
+  font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  font-size: 0.85em;
 }
 
-h1 {
-  font-size: 2.1rem;
-  font-weight: 600;
-  margin: 0 0 0.2rem;
-  letter-spacing: -0.02em;
-}
+/* --- masthead --- */
 
 .masthead {
-  border-bottom: 2px solid var(--ink);
-  padding-bottom: 1.1rem;
-  margin-bottom: 2.5rem;
+  display: flex; align-items: center; gap: 1rem;
+  border-bottom: 2px solid var(--brass-deep);
+  padding-bottom: 1.1rem; margin-bottom: 2.2rem;
 }
-
-.masthead p {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.95rem;
+.masthead h1 {
+  margin: 0; font-size: 2rem; font-weight: 900; letter-spacing: -0.04em;
+}
+.masthead .sub {
+  margin-left: auto; text-align: right;
+  color: var(--dim); font-size: 0.82rem; line-height: 1.4;
+}
+.masthead .tagline {
+  font-size: 0.78rem; letter-spacing: 0.1em; color: var(--brass);
+  font-family: "IBM Plex Mono", monospace;
 }
 
 h2 {
-  font-size: 1.15rem;
-  font-weight: 600;
-  margin: 3rem 0 0.4rem;
-  padding-bottom: 0.35rem;
-  border-bottom: 1px solid var(--rule);
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.14em;
+  color: var(--dim); text-transform: uppercase;
+  margin: 2.6rem 0 0.8rem;
+  font-family: "IBM Plex Mono", monospace;
 }
 
-h2:first-of-type { margin-top: 2rem; }
+/* --- the headline state --- */
 
-/* --- the hero: a quarantine notice, stamped --- */
-
-.notice {
-  border: 2px solid var(--deny);
-  padding: 1.6rem 1.8rem;
-  margin-bottom: 2.5rem;
-  position: relative;
-}
-
-.notice.clear { border-color: var(--allow); }
-
-.notice h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1.45rem;
-  font-weight: 600;
-  color: var(--deny);
-  letter-spacing: -0.01em;
-}
-
+.notice { border-left: 4px solid var(--deny); background: var(--panel); padding: 1.5rem 1.7rem; }
+.notice.clear { border-left-color: var(--allow); }
+.notice.watch { border-left-color: var(--brass); }
+.notice h3 { margin: 0 0 0.4rem; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; color: var(--deny); }
 .notice.clear h3 { color: var(--allow); }
+.notice.watch h3 { color: var(--brass); }
+.notice p { margin: 0.3rem 0 0; color: #cfdae2; }
+.notice .tool { margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--edge); }
+.notice .why { color: var(--dim); font-size: 0.92rem; }
 
-.notice p { margin: 0.4rem 0 0; }
+/* --- tally --- */
 
-.notice .tool {
-  font-size: 1.05rem;
-  margin-top: 1rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid var(--rule);
-}
+.tally { display: flex; gap: 2.6rem; margin: 0; padding: 0; list-style: none; }
+.tally .n { font-size: 2.3rem; font-weight: 900; letter-spacing: -0.04em; display: block; line-height: 1.05; }
+.tally .lbl { color: var(--dim); font-size: 0.85rem; }
 
-.notice .why { color: var(--ink-soft); font-size: 0.95rem; }
+/* --- ledger --- */
 
-/* --- the ledger --- */
-
-.entry {
-  border-left: 3px solid var(--rule);
-  padding: 0.75rem 0 0.75rem 1.1rem;
-  margin: 0 0 0.2rem;
-}
-
-.entry.denied { border-left-color: var(--deny); background: #fdf7f6; }
+.entry { border-left: 3px solid var(--edge); background: var(--panel); padding: 0.9rem 1.1rem; margin-bottom: 0.4rem; }
+.entry.denied { border-left-color: var(--deny); background: #2a1f22; }
 .entry.allowed { border-left-color: var(--allow); }
-
 .entry .head { display: flex; gap: 0.9rem; align-items: baseline; flex-wrap: wrap; }
-.entry .verdict { font-weight: 600; }
+.entry .verdict { font-weight: 800; letter-spacing: -0.01em; }
 .entry.denied .verdict { color: var(--deny); }
 .entry.allowed .verdict { color: var(--allow); }
-.entry .when { color: var(--ink-soft); font-size: 0.85rem; margin-left: auto; }
-.entry .why { color: var(--ink-soft); font-size: 0.92rem; margin-top: 0.2rem; }
+.entry .when { color: var(--dim); font-size: 0.8rem; margin-left: auto; }
+.entry .why { color: #cfdae2; font-size: 0.93rem; margin-top: 0.2rem; }
 
-/* --- the diff --- */
+/* --- diff --- */
 
-.diff { margin-top: 0.8rem; border: 1px solid var(--rule); }
-.diff .row { display: grid; grid-template-columns: 7.5rem 1fr; border-bottom: 1px solid var(--rule); }
+.diff { margin-top: 0.8rem; border: 1px solid var(--edge); }
+.diff .row { display: grid; grid-template-columns: 8rem 1fr; border-bottom: 1px solid var(--edge); }
 .diff .row:last-child { border-bottom: 0; }
-.diff .k { padding: 0.55rem 0.8rem; background: var(--panel); font-size: 0.85rem; color: var(--ink-soft); }
-.diff .v { padding: 0.55rem 0.8rem; }
-.diff .was { color: var(--ink-soft); text-decoration: line-through; }
+.diff .k { padding: 0.5rem 0.8rem; background: var(--facet); font-size: 0.82rem; color: var(--dim); }
+.diff .v { padding: 0.5rem 0.8rem; }
+.diff .was { color: var(--dim); text-decoration: line-through; }
 .diff .now { color: var(--deny); }
 
-/* --- tallies --- */
+/* --- table --- */
 
-.tally { display: flex; gap: 2.5rem; margin: 1rem 0 0; padding: 0; list-style: none; }
-.tally li { margin: 0; }
-.tally .n { font-size: 2rem; font-weight: 600; display: block; line-height: 1.1; }
-.tally .lbl { color: var(--ink-soft); font-size: 0.9rem; }
-
-table { width: 100%; border-collapse: collapse; margin-top: 0.8rem; }
-th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--rule); }
-th { font-weight: 600; font-size: 0.9rem; color: var(--ink-soft); }
-
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--edge); }
+th { font-size: 0.78rem; letter-spacing: 0.1em; color: var(--dim); font-family: "IBM Plex Mono", monospace; text-transform: uppercase; }
 .status-ok { color: var(--allow); }
-.status-q { color: var(--deny); font-weight: 600; }
+.status-q { color: var(--deny); font-weight: 700; }
 
-footer { margin-top: 4rem; padding-top: 1.2rem; border-top: 1px solid var(--rule);
-         color: var(--ink-soft); font-size: 0.88rem; }
+footer { margin-top: 3.5rem; padding-top: 1.2rem; border-top: 1px solid var(--edge); color: var(--dim); font-size: 0.88rem; }
 
 @media (max-width: 640px) {
-  .sheet { padding: 2rem 1.2rem 3rem; }
+  .sheet { padding: 1.6rem 1.1rem 3rem; }
+  .masthead { flex-wrap: wrap; }
+  .masthead .sub { margin-left: 0; text-align: left; width: 100%; }
   .diff .row { grid-template-columns: 1fr; }
-  .tally { gap: 1.5rem; }
+  .tally { gap: 1.4rem; flex-wrap: wrap; }
 }
 """
 
@@ -241,7 +231,12 @@ def build_html(registry: ContractRegistry, audit: AuditLog, source: str = "") ->
     decisions = audit.recent(200)
     counts = audit.counts()
 
-    # ---- hero ----
+    # ---- headline ----
+    #
+    # Three states, not two. The old version said "All contracts verified"
+    # whenever nothing had drifted - even with refusals on the page. Both
+    # statements were true, but the most important thing that happened was
+    # not the thing the top of the page announced.
     if quarantined:
         tools_html = ""
         for row in quarantined:
@@ -250,19 +245,28 @@ def build_html(registry: ContractRegistry, audit: AuditLog, source: str = "") ->
                 f'{esc(row["tool"])}</span>'
                 f'<div class="why">{esc(row["status_reason"])}</div></div>'
             )
+        plural = "s" if len(quarantined) != 1 else ""
         hero = (
-            f'<div class="notice"><h3>{len(quarantined)} tool'
-            f'{"s" if len(quarantined) != 1 else ""} quarantined</h3>'
+            f'<div class="notice"><h3>{len(quarantined)} tool{plural} quarantined</h3>'
             f"<p>These tools no longer match the contract they were approved under. "
-            f"Every call to them is refused until a person reviews the change and "
-            f"re-approves.</p>{tools_html}</div>"
+            f"Every call to them is refused, and they are withheld from the client "
+            f"entirely, until a person reviews the change and re-approves.</p>"
+            f"{tools_html}</div>"
+        )
+    elif counts["denied"]:
+        plural = "s" if counts["denied"] != 1 else ""
+        hero = (
+            f'<div class="notice watch"><h3>{counts["denied"]} call{plural} refused</h3>'
+            f"<p>No tool has drifted from its approved contract. These calls were "
+            f"stopped by policy — the tool asked for something it is not permitted "
+            f"to do. Each one is in the ledger below with the rule that stopped it.</p>"
+            f"</div>"
         )
     else:
         hero = (
             f'<div class="notice clear"><h3>All contracts verified</h3>'
             f"<p>Every tool currently advertised matches the contract it was "
-            f"approved under. {counts['denied']} call"
-            f"{'s' if counts['denied'] != 1 else ''} refused so far.</p></div>"
+            f"approved under, and nothing has been refused.</p></div>"
         )
 
     # ---- ledger ----
@@ -314,13 +318,19 @@ def build_html(registry: ContractRegistry, audit: AuditLog, source: str = "") ->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warden register</title>
+<link rel="icon" href="{FAVICON}">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;800;900&amp;family=IBM+Plex+Mono:wght@400;600&amp;display=swap">
 <style>{CSS}</style>
 </head><body>
 <div class="sheet">
 
   <div class="masthead">
-    <h1>Warden register</h1>
-    <p>Tool contract enforcement for MCP &nbsp;|&nbsp; generated {when(time.time())}{(" &nbsp;|&nbsp; " + esc(source)) if source else ""}</p>
+    {MARK_FULL}
+    <div>
+      <h1>WARDEN</h1>
+      <div class="tagline">TOOL CONTRACT ENFORCEMENT</div>
+    </div>
+    <div class="sub">generated {when(time.time())}<br>{esc(source) if source else ""}</div>
   </div>
 
   {hero}

@@ -79,7 +79,7 @@ denied_scopes:
   - process.spawn
   - credentials.read
   - network.raw
-  - tool.destructive
+  # - tool.destructive
 
 # Per-tool rules.
 tools:

@@ -831,6 +831,50 @@ def test_failure_message_surfaces_the_real_error():
           "never answered" in silent, silent)
 
 
+def test_report_headline_never_hides_a_refusal():
+    """
+    Day 8: the report said "All contracts verified" while the tally showed a
+    refusal. Both were true - nothing had drifted, a policy rule had fired -
+    but the most important thing on the page was not what the top announced.
+    """
+    from warden.audit import AuditLog
+    from warden.contracts import ToolContract
+    from warden.registry import ContractRegistry
+    from warden.report import build_html
+
+    def page(setup):
+        d = tempfile.mkdtemp()
+        reg = ContractRegistry(os.path.join(d, "r.db"))
+        aud = AuditLog(os.path.join(d, "a.db"))
+        setup(reg, aud)
+        html = build_html(reg, aud, "test")
+        reg.close()
+        aud.close()
+        return html.split("Tally")[0]  # the headline, above the numbers
+
+    def rec(aud, allowed, code):
+        aud.record(session="s", agent="a", server="sv", tool="t", allowed=allowed,
+                   code=code, reason="because", args={})
+
+    clean = page(lambda r, a: rec(a, True, "ALLOWED"))
+    check("a clean run says all verified", "All contracts verified" in clean)
+
+    refused = page(lambda r, a: (rec(a, True, "ALLOWED"), rec(a, False, "DENIED_SCOPE")))
+    check("a refusal is the headline", "1 call refused" in refused, refused[-200:])
+    check("a refusal is never called all-clear",
+          "All contracts verified" not in refused)
+
+    def quarantined(r, a):
+        r.pin(ToolContract("sv", "t", "d", {}, ()))
+        r.quarantine("sv", "t", "drifted")
+        rec(a, False, "CONTRACT_DRIFT")
+
+    quar = page(quarantined)
+    check("a quarantine outranks a refusal", "1 tool quarantined" in quar)
+    check("a quarantine is never called all-clear",
+          "All contracts verified" not in quar)
+
+
 def main() -> None:
     print("\nWarden 2.0 test suite")
     print("-" * 74)
@@ -865,6 +909,7 @@ def main() -> None:
         test_finds_packaged_claude_desktop_config,
         test_schema_dialect_shim,
         test_failure_message_surfaces_the_real_error,
+        test_report_headline_never_hides_a_refusal,
     ]:
         print(f"\n{fn.__name__}")
         fn()

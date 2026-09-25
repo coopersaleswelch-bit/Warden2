@@ -1,15 +1,15 @@
-WARDEN DAY 7
+WARDEN DAY 8
 ============
 
-New: menu option 13 sets up a REAL refusal you can screenshot. Option 14
-puts everything back.
+The report page now looks like Warden - navy, brass, the sentinel mark in the
+header. Plus a fix: a refusal can no longer be labelled "all clear".
 
 
-1. Copy WARDEN-DAY7-FILES out of the zip onto your Desktop.
+1. Copy WARDEN-DAY8-FILES out of the zip onto your Desktop.
 2. Open it. Ctrl+A, then Ctrl+C.
 3. Open WARDEN-SEPT15. Ctrl+V.
 4. Folders -> Yes / Merge.  Files -> Replace the files in the destination.
-5. Delete WARDEN-DAY7-FILES from your Desktop.
-6. Double-click START WARDEN.bat, press 2.  You want: 105 passed, 0 failed
-7. Press 13. It does everything for you and tells you what to do next.
+5. Delete WARDEN-DAY8-FILES from your Desktop.
+6. Double-click START WARDEN.bat, press 2.  You want: 110 passed, 0 failed
+7. Press 7 to see the new report.
 8. Double-click PUSH TO GITHUB.bat to save.

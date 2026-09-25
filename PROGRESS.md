@@ -435,14 +435,42 @@ Every refusal so far is from demos. Untested against servers that push
 
 ---
 
-## Day 8 — (not yet)
+## Day 8 — 24 September 2026
+
+**Gave Warden a face, and stopped the report hiding its own findings.**
+
+Brand: a faceted sentinel plate with a centre ridge and a single scanning slit.
+Navy and brass. Chosen over a heraldic crest and a riveted seal mainly on the
+small-size test — at 16 pixels the others collapse into a plus sign and a dot,
+while the visor still reads. The mark is defined as a family, not one drawing:
+below 32px the grille drops and the slit widens.
+
+The report page now carries that identity, with the mark in the masthead and a
+favicon built from the small version.
+
+**The fix that mattered more than the paint:** the report said "All contracts
+verified" while the tally showed a refusal. Both statements were true — nothing
+had drifted, a policy rule had fired — but the most important thing that
+happened was not the thing the top of the page announced. A security engineer
+skimming it would read "all clear" and miss the block.
+
+The headline now has three states, in order of severity: quarantined tools,
+then refusals, then clear. There is a test asserting a refusal can never be
+labelled all-clear, because this is a failure of honesty rather than of
+styling, and styling changes tend to reintroduce it.
+
+Refusals use their own red, never the brass. If refusals were brand-coloured,
+the most important signal on the page would look like decoration.
+
+Tests: 105 to 110.
+
+---
+
+## Day 9 — (not yet)
 
 Planned:
-1. Produce one real refusal from live usage. Change something about a protected
-   server, restart, and catch it against live data. That screenshot is the demo.
-2. Improve the error a failed inspection gives. When the server could not start,
-   Warden showed npm's changelog notice instead of the actual reason.
-3. Then stop building. Show it to one person who runs MCP servers.
+1. Stop building. Show it to one person who runs MCP servers.
+2. Only then: servers that push `tools/list_changed`, and HTTP transport.
 
 ---
 
