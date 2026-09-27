@@ -1,16 +1,15 @@
-WARDEN DAY 9
-============
+WARDEN DAY 10
+=============
 
-New README written for strangers, plus the logo as a file GitHub can show.
-The old README is kept at docs\README-buildnotes.md.
+New README - written as a product page, not a build journal. Name stays
+Warden (the conflict check is written up in PROGRESS.md).
 
 
-1. Copy WARDEN-DAY9-FILES out of the zip onto your Desktop.
+1. Copy WARDEN-DAY10-FILES out of the zip onto your Desktop.
 2. Open it. Ctrl+A, then Ctrl+C.
 3. Open WARDEN-SEPT15. Ctrl+V.
 4. Folders -> Yes / Merge.  Files -> Replace the files in the destination.
-5. Delete WARDEN-DAY9-FILES from your Desktop.
+5. Delete WARDEN-DAY10-FILES from your Desktop.
 6. Double-click START WARDEN.bat, press 2.  You want: 110 passed, 0 failed
 7. Double-click PUSH TO GITHUB.bat.
-8. Go to github.com/coopersaleswelch-bit/Warden2 and look at the front page.
-   That is what a stranger sees.
+8. Open the repo front page and read it as if you had never seen it.

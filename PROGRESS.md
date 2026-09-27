@@ -495,10 +495,50 @@ The old README is kept as `docs/README-buildnotes.md`.
 
 ---
 
-## Day 10 — (not yet)
+## Day 10 — 26 September 2026
+
+**Name checked and kept. README rewritten as a product page.**
+
+Ran a naming conflict check before committing further to Warden. Findings, for
+the record rather than as legal advice: two GitHub projects and two commercial
+products share the name in adjacent AI-security territory — an agent-to-
+enterprise gateway, an action control plane with a tamper-evident audit chain,
+a commercial AI gateway, and a product called AgentWarden. None owns the name
+decisively, and none does contract integrity as its core claim.
+
+Decision: keep Warden. The crowding is a findability problem, and findability
+only matters once there are users to do the finding. Revisit at a real decision
+point — a domain, incorporation, or a first user — with a lawyer involved.
+
+Also checked and rejected: Assay (three AI-security projects use it), Signet
+(an MCP signing tool), Clevis (a Red Hat security framework), Vigil (an open
+source AI SOC with its own domain), Bezel (three companies), Verid (the
+identity-verification space is saturated with Ver- names). Cotter, Detent,
+Ferrule and Pawl came back clean and are noted here in case the question
+reopens.
+
+**README rewritten** in the structure a buyer reads rather than the order the
+code was built: problem, why one-time approval is insufficient, what Warden
+does, architecture, attack demonstration, installation, a two-minute demo,
+security model, policy, audit, limitations, roadmap, development, licence.
+
+Framing moved up a level. The old version opened on MCP contract mechanics. The
+new one opens on what a company actually cares about: agents have real access to
+real systems, and the job is making sure they only do what was approved.
+
+Two rules held while writing it. The roadmap is explicitly labelled as not
+built, so nothing reads as a shipped capability that isn't. And the limitations
+section is stated plainly — stdio only, one third-party server, no agent
+identity, not independently audited — because a security tool that hides its
+edges does not deserve to be trusted.
+
+---
+
+## Day 11 — (not yet)
 
 Planned:
-1. Show it to one person who runs MCP servers.
+1. Decide public or private on the repo.
+2. Show it to one person who runs MCP servers.
 
 ---
 
