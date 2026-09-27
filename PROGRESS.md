@@ -517,14 +517,27 @@ identity-verification space is saturated with Ver- names). Cotter, Detent,
 Ferrule and Pawl came back clean and are noted here in case the question
 reopens.
 
-**README rewritten** in the structure a buyer reads rather than the order the
-code was built: problem, why one-time approval is insufficient, what Warden
+**README rewritten twice.** First into the structure a buyer reads rather than
+the order the code was built: problem, why one-time approval is insufficient, what Warden
 does, architecture, attack demonstration, installation, a two-minute demo,
 security model, policy, audit, limitations, roadmap, development, licence.
 
 Framing moved up a level. The old version opened on MCP contract mechanics. The
 new one opens on what a company actually cares about: agents have real access to
 real systems, and the job is making sure they only do what was approved.
+
+Then rewritten again for voice. The first pass was structurally right and read
+like a specification. The second pass cut every em dash, varied the sentence
+lengths, and replaced the abstract opening with a concrete scene: the tool
+approved in January that quietly stops being read-only in March. Research is now
+attributed to who published it and when, in the prose, rather than floating as
+an unsourced statistic.
+
+The headline went through several drafts. "An AI agent will trust a tool that
+changed an hour ago. Warden will not." was rejected for sounding written rather
+than spoken. The line that stuck is the one you could say out loud to someone
+without rehearsing it: "Approve a tool once. Warden checks it every time it
+runs."
 
 Two rules held while writing it. The roadmap is explicitly labelled as not
 built, so nothing reads as a shipped capability that isn't. And the limitations
