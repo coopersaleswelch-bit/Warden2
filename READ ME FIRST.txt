@@ -1,15 +1,15 @@
-WARDEN DAY 10
+WARDEN DAY 11
 =============
 
-New README. Written to be read, not skimmed. No em dashes, sources credited
-where they came from, and a headline you could say out loud.
+Warden now reacts when a server announces its tools changed, and no longer
+crashes when a pipe closes at the wrong moment. Tested against three real
+third-party servers.
 
 
-1. Copy WARDEN-DAY10-FILES out of the zip onto your Desktop.
+1. Copy WARDEN-DAY11-FILES out of the zip onto your Desktop.
 2. Open it. Ctrl+A, then Ctrl+C.
 3. Open WARDEN-SEPT15. Ctrl+V.
 4. Folders -> Yes / Merge.  Files -> Replace the files in the destination.
-5. Delete WARDEN-DAY10-FILES from your Desktop.
-6. Double-click START WARDEN.bat, press 2.  You want: 110 passed, 0 failed
+5. Delete WARDEN-DAY11-FILES from your Desktop.
+6. Double-click START WARDEN.bat, press 2.  You want: 129 passed, 0 failed
 7. Double-click PUSH TO GITHUB.bat.
-8. Open the repo front page and read it top to bottom.

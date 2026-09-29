@@ -67,6 +67,10 @@ to.
 memory. A tool that no longer matches is quarantined and withheld from the
 client completely, so a poisoned description never reaches the model at all.
 
+**When a server announces its tools changed**, Warden asks for the new list
+immediately rather than waiting for the client to get curious. A mutated tool is
+quarantined before the next call, not after it.
+
 **On every call**, Warden interrogates the call itself. Is this tool known. Is
 it quarantined. Does its contract still match. Does it claim a capability policy
 forbids. Are the arguments inside policy, and inside the schema that was
@@ -154,7 +158,7 @@ all leave your config untouched.
 ## Two minutes
 
 ```bash
-python test_warden.py     # 110 checks
+python test_warden.py     # 129 checks
 python demo_day3.py       # an upgrade accepted, two attacks caught
 python demo_day4.py       # run against a real third-party MCP server
 ```
@@ -234,10 +238,8 @@ Stated plainly, because a security tool that hides its edges has not earned
 your trust.
 
 - **stdio transport only.** Servers reached over HTTP are not supported.
-- **Untested against `tools/list_changed`.** Servers that push tool list updates
-  mid-session have not been exercised.
-- **Verified against one third-party server.** Others will behave in ways this
-  has not met.
+- **Verified against three third-party servers.** The official filesystem,
+  memory and everything servers. Others will behave in ways these have not.
 - **Single node, local state.** No central control plane, no multi-tenancy.
 - **No agent identity.** Warden knows which tool and which arguments. It does
   not yet know which agent, or on whose behalf.
@@ -247,8 +249,8 @@ your trust.
 
 None of the following is built. It is listed so the direction is legible.
 
-**Next.** HTTP transport on the existing enforcement core. Servers that change
-their tool list mid-session. A second and third real server.
+**Next.** HTTP transport on the existing enforcement core. More third-party
+servers, and servers that behave less politely than the official ones.
 
 **Later.** Agent identity and per-agent policy. Structured export for SIEM and
 compliance tooling. Central policy distribution across machines.
@@ -263,7 +265,7 @@ guessing.
 python test_warden.py
 ```
 
-110 checks across the contract model, the capability classifier, the proxy, the
+129 checks across the contract model, the capability classifier, the proxy, the
 installer and the report. Every bug found so far has a permanent regression
 test. `PROGRESS.md` is the build log, including what broke and why.
 

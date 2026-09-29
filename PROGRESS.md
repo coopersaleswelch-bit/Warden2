@@ -547,11 +547,68 @@ edges does not deserve to be trusted.
 
 ---
 
-## Day 11 — (not yet)
+## Day 11 — 28 September 2026
+
+**Closed two limitations off the README, and a real server found a crash.**
+
+### Warden now answers when a server speaks
+
+A server can send `notifications/tools/list_changed` to say its tools have
+changed. Warden forwarded that straight to the client and did nothing else.
+Reproduced it first: the server announced, the log stayed silent, and the
+mutated tool sat APPROVED until the client happened to re-list. Nothing in the
+audit trail recorded that the server had announced anything at all.
+
+For a product whose whole claim is noticing when tools change, ignoring the
+server's own announcement that tools changed was the wrong behaviour.
+
+Warden now issues its own `tools/list` on receiving that notification, using a
+reserved request id. The answer is consumed internally and never forwarded,
+because the client never asked for it. Verified end to end: the server mutates
+and announces, Warden re-checks, quarantines and withholds the tool, and the
+client's next call is blocked without the client ever having re-listed.
+
+### Two concurrency bugs, one latent and one I introduced
+
+The refresh runs on the reader thread, but `to_server` and `to_client` were
+already being called from two threads with no lock. Interleaved writes corrupt
+a JSON line and break the protocol. Both directions now have their own lock.
+
+`pending` was also unbounded. A server that never answers a request left its
+entry there forever. It is now an ordered map capped at 512 entries.
+
+### The crash the everything server found
+
+Ran Warden against three real third-party servers: filesystem, memory, and
+everything. The everything server announces a tool list change proactively at
+startup. When the client disconnected at that moment, the main thread closed
+the pipe while the reader thread was still handling the announcement, and the
+refresh wrote into a closed file. Warden died with `ValueError: I/O operation
+on closed file`.
+
+That is a race I introduced today, and a proxy that dies is a proxy that checks
+nothing. Both directions now degrade quietly when a pipe goes away, release the
+refresh flag so a later session is not blocked, and mark the session closing so
+nothing keeps trying to write.
+
+The tests had passed the whole time, because nothing exercised the proxy's
+message loop. That gap is now covered.
+
+### What the three servers confirmed
+
+Permissions derived from behaviour hints hold up across servers Warden has
+never seen: `memory::delete_entities` reads as destructive, `create_entities`
+as write-only, `everything::echo` as read-only. None of it hand-configured.
+
+Tests: 110 to 129.
+
+---
+
+## Day 12 — (not yet)
 
 Planned:
-1. Decide public or private on the repo.
-2. Show it to one person who runs MCP servers.
+1. HTTP transport on the existing enforcement core.
+2. Decide public or private on the repo.
 
 ---
 

@@ -37,6 +37,7 @@ import shutil
 import subprocess
 import sys
 import threading
+from collections import OrderedDict
 from typing import Any
 
 from .audit import AuditLog
@@ -44,6 +45,11 @@ from .contracts import ToolContract
 from .enforcer import Enforcer
 from .policy import load_policy
 from .registry import ContractRegistry
+
+
+# How many unanswered requests to remember. A server that never replies would
+# otherwise leave its entry in `pending` forever.
+PENDING_LIMIT = 512
 
 
 def log(msg: str) -> None:
@@ -225,12 +231,34 @@ class WardenProxy:
         self.discover = discover
 
         self.child: subprocess.Popen | None = None
-        # request id -> method, so we know what a response is a response to
-        self.pending: dict[Any, str] = {}
+        # request id -> method, so we know what a response is a response to.
+        # Ordered and capped: a server that never answers a request would
+        # otherwise leave an entry here forever, and a long session would grow
+        # without bound.
+        self.pending: OrderedDict[Any, str] = OrderedDict()
         self.lock = threading.Lock()
+
+        # Two threads write to these pipes: the main thread relaying client
+        # messages, and the reader thread relaying server messages and issuing
+        # Warden's own refreshes. Interleaved writes would corrupt a JSON line
+        # and break the protocol, so each direction gets its own lock.
+        self.server_write_lock = threading.Lock()
+        self.client_write_lock = threading.Lock()
+
+        # Requests Warden issued for itself. Their answers are consumed here
+        # and never forwarded, because the client never asked for them.
+        self.internal_ids: set[str] = set()
+        self.refresh_count = 0
+        self.refresh_in_flight = False
+
+        # Set once shutdown begins. The reader thread can still be handling a
+        # server notification at that moment, and writing into a pipe that the
+        # main thread has just closed raises. Warden crashing is itself a
+        # security failure: a proxy that dies is a proxy that checks nothing.
+        self.closing = False
         self.stats = {
             "forwarded": 0, "blocked": 0, "tools_seen": 0,
-            "quarantined": 0, "upgrades": 0, "withheld": 0,
+            "quarantined": 0, "upgrades": 0, "withheld": 0, "announcements": 0,
         }
 
     # ---------- plumbing ----------
@@ -257,14 +285,33 @@ class WardenProxy:
         if self.discover:
             log("DISCOVERY MODE — contracts will be pinned, not enforced")
 
-    def to_server(self, message: dict) -> None:
-        assert self.child and self.child.stdin
-        self.child.stdin.write(json.dumps(message) + "\n")
-        self.child.stdin.flush()
+    def to_server(self, message: dict) -> bool:
+        """Send to the server. Returns False if the pipe is gone."""
+        if self.closing or not (self.child and self.child.stdin):
+            return False
+        line = json.dumps(message) + "\n"
+        with self.server_write_lock:
+            try:
+                self.child.stdin.write(line)
+                self.child.stdin.flush()
+                return True
+            except (ValueError, OSError) as exc:
+                log(f"could not reach the server, it has gone away ({exc})")
+                self.closing = True
+                return False
 
-    def to_client(self, message: dict) -> None:
-        sys.stdout.write(json.dumps(message) + "\n")
-        sys.stdout.flush()
+    def to_client(self, message: dict) -> bool:
+        """Send to the client. Returns False if the pipe is gone."""
+        line = json.dumps(message) + "\n"
+        with self.client_write_lock:
+            try:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                return True
+            except (ValueError, OSError) as exc:
+                log(f"could not reach the client, it has gone away ({exc})")
+                self.closing = True
+                return False
 
     # ---------- interception: client -> server ----------
 
@@ -275,6 +322,8 @@ class WardenProxy:
         if method and msg_id is not None:
             with self.lock:
                 self.pending[msg_id] = method
+                while len(self.pending) > PENDING_LIMIT:
+                    self.pending.popitem(last=False)
 
         if method == "tools/call":
             self.handle_tool_call(message)
@@ -327,12 +376,77 @@ class WardenProxy:
             }
         )
 
+    # ---------- Warden's own requests ----------
+
+    def refresh_tool_list(self, reason: str) -> None:
+        """
+        Ask the server for its tool list on Warden's own behalf.
+
+        A server announcing that its tools changed is the server telling you to
+        look again. Waiting for the client to get around to asking leaves a
+        window where a mutated tool is still approved, and leaves nothing in the
+        audit log to say the server ever announced anything.
+
+        The answer to this request is consumed by Warden and never forwarded:
+        the client did not ask for it and would not know what to do with it.
+        """
+        with self.lock:
+            if self.closing:
+                return
+            if self.refresh_in_flight:
+                log("refresh already in flight, not asking twice")
+                return
+            self.refresh_in_flight = True
+            self.refresh_count += 1
+            request_id = f"warden-refresh-{self.refresh_count}"
+            self.internal_ids.add(request_id)
+            self.pending[request_id] = "tools/list"
+
+        log(f"re-checking the tool list ({reason})")
+        if not self.to_server({"jsonrpc": "2.0", "id": request_id, "method": "tools/list"}):
+            # The pipe closed between deciding to ask and asking. Release the
+            # flag so a later session is not permanently blocked.
+            with self.lock:
+                self.internal_ids.discard(request_id)
+                self.pending.pop(request_id, None)
+                self.refresh_in_flight = False
+
+    def handle_internal_reply(self, message: dict) -> None:
+        """Consume the answer to a refresh Warden asked for itself."""
+        with self.lock:
+            self.internal_ids.discard(message.get("id"))
+            self.refresh_in_flight = False
+
+        if "result" in message:
+            tools = message["result"].get("tools") or []
+            self.inspect_tool_list(tools)
+            log(f"re-check complete, {len(tools)} tools verified")
+        else:
+            error = (message.get("error") or {}).get("message", "no result")
+            log(f"re-check failed: {error}")
+
     # ---------- interception: server -> client ----------
 
     def handle_server_message(self, message: dict) -> None:
         msg_id = message.get("id")
+
+        # Warden's own request, answered. Consume it, do not forward.
+        if msg_id is not None and msg_id in self.internal_ids:
+            with self.lock:
+                self.pending.pop(msg_id, None)
+            self.handle_internal_reply(message)
+            return
+
         with self.lock:
-            method = self.pending.pop(msg_id, None)
+            method = self.pending.pop(msg_id, None) if msg_id is not None else None
+
+        # The server announcing its own tools changed. Look now, do not wait
+        # for the client to ask.
+        if message.get("method") == "notifications/tools/list_changed":
+            self.stats["announcements"] += 1
+            self.to_client(message)
+            self.refresh_tool_list("server announced tools/list_changed")
+            return
 
         if method == "initialize" and "result" in message:
             info = message["result"].get("serverInfo") or {}
@@ -486,6 +600,7 @@ class WardenProxy:
             self.shutdown()
 
     def shutdown(self) -> None:
+        self.closing = True
         if self.child:
             try:
                 if self.child.stdin:
@@ -498,6 +613,7 @@ class WardenProxy:
             f"blocked={self.stats['blocked']} "
             f"quarantined={self.stats['quarantined']} "
             f"withheld={self.stats['withheld']} "
+            f"announcements={self.stats['announcements']} "
             f"upgrades_accepted={self.stats['upgrades']}"
         )
 
