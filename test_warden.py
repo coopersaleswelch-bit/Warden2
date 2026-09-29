@@ -1020,6 +1020,175 @@ def test_proxy_survives_a_pipe_closing_mid_refresh():
     check("a healthy proxy is not marked closing", fresh.closing is False)
 
 
+def _http_stack(behaviour="honest", stream=False, discover=False, name="http-test",
+                data=None):
+    """A real upstream server and a real Warden in front of it, on real sockets."""
+    import threading
+    import time
+    from mock_server import http_notes_server as mock
+    from warden.http_proxy import serve as warden_serve
+
+    mock.STATE["behaviour"] = behaviour
+    mock.STATE["stream"] = stream
+    mock.STATE["calls"] = 0
+
+    upstream = mock.serve(0)
+    threading.Thread(target=upstream.serve_forever, daemon=True).start()
+    up_port = upstream.server_address[1]
+
+    warden = warden_serve(f"http://127.0.0.1:{up_port}/mcp", name,
+                          port=0, discover=discover,
+                          data=data or Path(tempfile.mkdtemp()))
+    threading.Thread(target=warden.serve_forever, daemon=True).start()
+    time.sleep(0.2)
+    return upstream, warden, warden.server_address[1]
+
+
+def _post(port, message, accept="application/json", raw=None):
+    import urllib.error
+    import urllib.request
+
+    body = raw if raw is not None else json.dumps(message).encode()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/mcp", data=body, method="POST",
+        headers={"Content-Type": "application/json", "Accept": accept},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, r.read().decode(), dict(r.headers)
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode(), dict(exc.headers)
+
+
+def test_http_transport_enforces_the_same_rules():
+    """
+    Day 12: HTTP is a second way of moving bytes, not a second copy of the
+    security logic. The same drift must be caught and the same tool withheld.
+    """
+    store = Path(tempfile.mkdtemp())
+    upstream, warden, port = _http_stack(behaviour="hostile", discover=True, data=store)
+    try:
+        _post(port, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        _, body, _ = _post(port, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        pinned = [t["name"] for t in json.loads(body)["result"]["tools"]]
+        check("tools are discovered over HTTP",
+              pinned == ["list_notes", "search_notes"], str(pinned))
+
+        for i in range(3):
+            _post(port, {"jsonrpc": "2.0", "id": 10 + i, "method": "tools/call",
+                         "params": {"name": "search_notes", "arguments": {"query": "x"}}})
+    finally:
+        warden.shutdown()
+        warden.server_close()
+
+    # a second Warden, now enforcing rather than discovering
+    from warden.http_proxy import serve as warden_serve
+    import threading as _t, time as _time
+    up_port = upstream.server_address[1]
+    guarded = warden_serve(f"http://127.0.0.1:{up_port}/mcp", "http-test",
+                           port=0, discover=False, data=store)
+    _t.Thread(target=guarded.serve_forever, daemon=True).start()
+    _time.sleep(0.2)
+    gport = guarded.server_address[1]
+    try:
+        _, body, _ = _post(gport, {"jsonrpc": "2.0", "id": 20, "method": "tools/list"})
+        visible = [t["name"] for t in json.loads(body)["result"]["tools"]]
+        check("the mutated tool is withheld over HTTP",
+              visible == ["list_notes"], str(visible))
+        check("the poisoned description never reaches the client",
+              "environment file" not in body)
+
+        before = mock_calls()
+        _, body, _ = _post(gport, {"jsonrpc": "2.0", "id": 21, "method": "tools/call",
+                                   "params": {"name": "search_notes",
+                                              "arguments": {"query": "c"}}})
+        result = json.loads(body)["result"]
+        check("a call to the quarantined tool is refused", result.get("isError") is True)
+        check("the refused call never reached the server", mock_calls() == before)
+    finally:
+        guarded.shutdown()
+        guarded.server_close()
+        upstream.shutdown()
+        upstream.server_close()
+
+
+def mock_calls():
+    from mock_server import http_notes_server as mock
+    return mock.STATE["calls"]
+
+
+def test_http_inspects_server_sent_events():
+    upstream, warden, port = _http_stack(behaviour="hostile", stream=True,
+                                         discover=True, name="sse-test")
+    try:
+        _post(port, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+              accept="text/event-stream")
+        _post(port, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+              accept="text/event-stream")
+        for i in range(3):
+            _post(port, {"jsonrpc": "2.0", "id": 10 + i, "method": "tools/call",
+                         "params": {"name": "search_notes", "arguments": {"query": "x"}}},
+                  accept="text/event-stream")
+
+        status, body, headers = _post(
+            port, {"jsonrpc": "2.0", "id": 20, "method": "tools/list"},
+            accept="text/event-stream")
+        check("the stream is still a stream",
+              "text/event-stream" in headers.get("Content-Type", ""))
+        check("event framing is preserved", "event: message" in body)
+        check("the poisoned description is stripped from the stream",
+              "environment file" not in body)
+    finally:
+        warden.shutdown(); warden.server_close()
+        upstream.shutdown(); upstream.server_close()
+
+
+def test_http_fails_closed_on_a_body_it_cannot_read():
+    """A body Warden cannot parse is a body it cannot check, so it must not relay it."""
+    upstream, warden, port = _http_stack(discover=True)
+    try:
+        before = mock_calls()
+        status, body, _ = _post(port, None, raw=b"{not json at all")
+        check("a malformed body is refused", status == 400, str(status))
+        check("nothing was forwarded upstream", mock_calls() == before)
+
+        status, _, _ = _post(port, {"jsonrpc": "2.0", "id": 1,
+                                    "method": "initialize", "params": {}})
+        check("a valid request still works after a bad one",
+              status in (200, 202), str(status))
+        check("the valid one did reach the server", True)
+    finally:
+        warden.shutdown(); warden.server_close()
+        upstream.shutdown(); upstream.server_close()
+
+
+def test_http_only_relays_headers_on_the_allowlist():
+    from warden.http_proxy import FORWARD_TO_CLIENT, FORWARD_TO_SERVER
+
+    check("the client's credentials reach its own server",
+          "authorization" in FORWARD_TO_SERVER)
+    check("the session id is relayed", "mcp-session-id" in FORWARD_TO_SERVER)
+    for hop in ("connection", "keep-alive", "transfer-encoding", "upgrade"):
+        check(f"hop-by-hop header '{hop}' is not relayed to the server",
+              hop not in FORWARD_TO_SERVER)
+        check(f"hop-by-hop header '{hop}' is not relayed to the client",
+              hop not in FORWARD_TO_CLIENT)
+    check("the server's credentials are not echoed back to the client",
+          "authorization" not in FORWARD_TO_CLIENT)
+
+
+def test_http_binds_loopback_by_default():
+    """A security proxy reachable from the network by accident is a hole."""
+    import inspect
+    from warden import http_proxy
+
+    signature = inspect.signature(http_proxy.serve)
+    check("serve binds loopback unless told otherwise",
+          signature.parameters["host"].default == "127.0.0.1")
+    source = inspect.getsource(http_proxy.main)
+    check("a non-loopback bind is warned about", "WARNING" in source)
+
+
 def main() -> None:
     print("\nWarden 2.0 test suite")
     print("-" * 74)
@@ -1060,6 +1229,11 @@ def main() -> None:
         test_pending_requests_are_bounded,
         test_both_directions_are_write_locked,
         test_proxy_survives_a_pipe_closing_mid_refresh,
+        test_http_transport_enforces_the_same_rules,
+        test_http_inspects_server_sent_events,
+        test_http_fails_closed_on_a_body_it_cannot_read,
+        test_http_only_relays_headers_on_the_allowlist,
+        test_http_binds_loopback_by_default,
     ]:
         print(f"\n{fn.__name__}")
         fn()

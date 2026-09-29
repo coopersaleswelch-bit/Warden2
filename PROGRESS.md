@@ -604,10 +604,71 @@ Tests: 110 to 129.
 
 ---
 
-## Day 12 — (not yet)
+## Day 12 — 29 September 2026
+
+**HTTP transport, built by first making sure there would only ever be one copy
+of the security logic.**
+
+### The refactor came first
+
+`proxy.py` was 670 lines with transport and enforcement tangled together.
+Writing an HTTP proxy against that shape would have meant a second copy of the
+rules, and the copy nobody was testing would have been the one that drifted.
+
+Extracted `warden/guard.py`: contract translation, tool list inspection, the
+call decision, the handshake note. It has never heard of a pipe or a socket.
+The stdio proxy dropped to 457 lines and now delegates every decision. All 129
+tests stayed green through the move, which is the only reason the refactor was
+safe to attempt.
+
+### Then the transport
+
+`warden/http_proxy.py`, standard library only, so PyYAML remains the single
+dependency. A security product's own supply chain is part of the attack
+surface.
+
+Handles the shapes a real client uses: JSON replies, server-sent event streams,
+the GET stream for server-initiated messages, session teardown on DELETE.
+Sessions are passed through untouched, because `Mcp-Session-Id` is the server's
+identifier and not Warden's to invent or interpret.
+
+Verified over real sockets against a real HTTP server, in both JSON and event
+stream form: tools discovered and pinned, the server turns, the mutated tool is
+withheld, the poisoned description never reaches the client, and a call to the
+quarantined tool is refused without the server ever being contacted.
+
+### Decisions worth recording
+
+**Fails closed on an unreadable body.** A body Warden cannot parse is a body it
+cannot check, so it is refused rather than relayed.
+
+**Header allowlist rather than a blanket copy.** Hop-by-hop headers break when
+proxied, and copying everything is how a proxy leaks something it never meant
+to. The client's own Authorization reaches the client's own server; nothing
+travels back the other way.
+
+**Binds loopback by default,** and warns when told to bind anything else.
+
+**Bounded request bodies.** An unbounded read is the easiest way to knock a
+proxy over.
+
+### A bug I reintroduced
+
+The first HTTP tests failed because discovery returned one tool instead of two.
+Not a flaky test: `serve()` always used the live data directory, so the test run
+wrote into the registry a real user depends on, and a previous test had already
+quarantined that tool. Same class of bug fixed in the installer on Day 6, made
+again in new code. The data directory is now injectable, and a full test run
+leaves live data untouched, which is asserted.
+
+Tests: 129 to 154.
+
+---
+
+## Day 13 — (not yet)
 
 Planned:
-1. HTTP transport on the existing enforcement core.
+1. Run the HTTP transport against a hosted MCP server rather than a test one.
 2. Decide public or private on the repo.
 
 ---

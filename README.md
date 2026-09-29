@@ -95,10 +95,11 @@ that produced it, the arguments involved, the fingerprint, and the time.
       MCP server
 ```
 
-The enforcement engine is independent of transport. The proxy turns protocol
-traffic into contract checks and policy decisions. The decisions themselves know
-nothing about pipes or sockets, so supporting another transport never means a
-second copy of the security logic.
+The enforcement engine is independent of transport, and that is not an
+aspiration. Every security decision lives in one module that has never heard of
+a pipe or a socket. Warden speaks stdio to a local server and HTTP to a remote
+one, and both ask the same code the same questions. Two copies would drift, and
+the one that drifted would be the one nobody was testing.
 
 ## Seeing it work
 
@@ -146,6 +147,16 @@ python -m warden.doctor      # checks this machine, reads only, changes nothing
 python -m warden.install     # lists configured servers, protects the one you pick
 ```
 
+For a server reached over the network, Warden runs as a proxy in front of it and
+your client points at Warden instead:
+
+```bash
+python -m warden.http_proxy --upstream https://example.com/mcp --name acme
+```
+
+It binds to loopback unless told otherwise, because a security proxy that is
+reachable from the network by accident is a hole rather than a control.
+
 The installer records a server's contracts before it touches any configuration,
 backs up the existing config with a timestamp, preserves the server's own
 environment variables, and restores the original entry exactly when you run
@@ -158,7 +169,7 @@ all leave your config untouched.
 ## Two minutes
 
 ```bash
-python test_warden.py     # 129 checks
+python test_warden.py     # 154 checks
 python demo_day3.py       # an upgrade accepted, two attacks caught
 python demo_day4.py       # run against a real third-party MCP server
 ```
@@ -237,7 +248,9 @@ refusal is never displayed as all clear.
 Stated plainly, because a security tool that hides its edges has not earned
 your trust.
 
-- **stdio transport only.** Servers reached over HTTP are not supported.
+- **HTTP is new and lightly exercised.** It works against a test server over
+  real sockets, in both JSON and event-stream form, but has not been run
+  against a hosted production server.
 - **Verified against three third-party servers.** The official filesystem,
   memory and everything servers. Others will behave in ways these have not.
 - **Single node, local state.** No central control plane, no multi-tenancy.
@@ -249,8 +262,9 @@ your trust.
 
 None of the following is built. It is listed so the direction is legible.
 
-**Next.** HTTP transport on the existing enforcement core. More third-party
-servers, and servers that behave less politely than the official ones.
+**Next.** Run the HTTP transport against a hosted server in anger. More
+third-party servers, and servers that behave less politely than the official
+ones.
 
 **Later.** Agent identity and per-agent policy. Structured export for SIEM and
 compliance tooling. Central policy distribution across machines.
@@ -265,7 +279,7 @@ guessing.
 python test_warden.py
 ```
 
-129 checks across the contract model, the capability classifier, the proxy, the
+154 checks across the contract model, the capability classifier, the proxy, the
 installer and the report. Every bug found so far has a permanent regression
 test. `PROGRESS.md` is the build log, including what broke and why.
 

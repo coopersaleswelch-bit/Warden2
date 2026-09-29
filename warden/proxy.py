@@ -43,6 +43,12 @@ from typing import Any
 from .audit import AuditLog
 from .contracts import ToolContract
 from .enforcer import Enforcer
+from .guard import (
+    MessageGuard,
+    contract_from_mcp_tool,
+    mcp_tool_from_contract,
+    sanitize_for_client,
+)
 from .policy import load_policy
 from .registry import ContractRegistry
 
@@ -96,119 +102,6 @@ def default_server_name(argv: list[str]) -> str:
     return os.path.splitext(os.path.basename(argv[0]))[0] or "mcp-server"
 
 
-def _strip_schema_dialect(value):
-    """Remove every "$schema" declaration, however deeply nested."""
-    if isinstance(value, dict):
-        return {
-            k: _strip_schema_dialect(v)
-            for k, v in value.items()
-            if k != "$schema"
-        }
-    if isinstance(value, list):
-        return [_strip_schema_dialect(v) for v in value]
-    return value
-
-
-def sanitize_for_client(tool: dict, mode: str) -> tuple[dict, bool]:
-    """
-    Adjust a tool definition so the client can accept it. Returns
-    (definition, changed).
-
-    Every official MCP server currently declares its schemas as JSON Schema
-    draft-07. Some clients validate against 2020-12 only and reject the tool
-    outright - the server is then unusable, with or without Warden in the path.
-    Dropping the dialect declaration lets the client fall back to its own
-    default, which is what it would have used anyway.
-
-    This is the one place Warden alters what a server said, so it is kept as
-    narrow as possible: only the "$schema" key is removed, nothing else, and
-    the change is logged. The PINNED contract still holds the server's original
-    definition, so drift detection is unaffected - Warden compares the server
-    against what the server said, not against what it forwarded.
-    """
-    if mode != "strip_dialect":
-        return tool, False
-
-    cleaned = _strip_schema_dialect(tool)
-    return cleaned, cleaned != tool
-
-
-def contract_from_mcp_tool(server_name: str, tool: dict) -> ToolContract:
-    """
-    Translate one entry of an MCP tools/list result into a pinnable contract.
-
-    Real MCP tools do not declare "scopes". They declare behaviour hints, and
-    those hints are the closest thing the protocol has to a permission model:
-
-        readOnlyHint: false   the tool can modify state
-        destructiveHint: true the tool can destroy or overwrite
-        openWorldHint: true   the tool can reach outside the local system
-
-    Warden derives scopes from those so its permission rules work against
-    servers nobody wrote for it. A custom "scopes" annotation is still honoured
-    for servers that publish one, but nothing depends on it.
-    """
-    annotations = tool.get("annotations") or {}
-
-    scopes: set[str] = set()
-
-    custom = annotations.get("scopes") or []
-    if isinstance(custom, str):
-        custom = [custom]
-    scopes.update(custom)
-
-    # readOnlyHint is the important one, and its absence is not a promise.
-    # A tool that does not claim to be read-only is treated as able to write.
-    if annotations.get("readOnlyHint") is True:
-        scopes.add("tool.read")
-    else:
-        scopes.add("tool.write")
-
-    if annotations.get("destructiveHint") is True:
-        scopes.add("tool.destructive")
-    if annotations.get("openWorldHint") is True:
-        scopes.add("tool.openworld")
-
-    return ToolContract(
-        server=server_name,
-        tool=tool.get("name", "<unnamed>"),
-        description=tool.get("description", ""),
-        input_schema=tool.get("inputSchema") or tool.get("input_schema") or {},
-        declared_scopes=tuple(sorted(scopes)),
-        title=tool.get("title", "") or "",
-        annotations={k: v for k, v in annotations.items() if k != "scopes"},
-        output_schema=tool.get("outputSchema") or tool.get("output_schema") or {},
-    )
-
-
-def mcp_tool_from_contract(contract: ToolContract) -> dict:
-    """
-    Rebuild the tool definition a client should see from an APPROVED contract.
-
-    Used when policy serves the last approved version of a quarantined tool
-    instead of hiding it. The client keeps a stable view of the server, sees
-    only text a human signed off on, and any call is still refused by the
-    quarantine check.
-    """
-    annotations = dict(contract.annotations)
-    custom = [s for s in contract.declared_scopes if not s.startswith("tool.")]
-    if custom:
-        annotations["scopes"] = custom
-
-    tool: dict = {
-        "name": contract.tool,
-        "description": contract.description,
-        "inputSchema": contract.input_schema,
-    }
-    if contract.title:
-        tool["title"] = contract.title
-    if annotations:
-        tool["annotations"] = annotations
-    if contract.output_schema:
-        tool["outputSchema"] = contract.output_schema
-    return tool
-
-
 class WardenProxy:
     def __init__(
         self,
@@ -229,6 +122,8 @@ class WardenProxy:
         self.server_name = server_name
         self.enforcer = enforcer
         self.discover = discover
+        # Every security decision lives here, shared with any other transport.
+        self.guard = MessageGuard(enforcer, server_name, discover=discover, log=log)
 
         self.child: subprocess.Popen | None = None
         # request id -> method, so we know what a response is a response to.
@@ -256,10 +151,7 @@ class WardenProxy:
         # main thread has just closed raises. Warden crashing is itself a
         # security failure: a proxy that dies is a proxy that checks nothing.
         self.closing = False
-        self.stats = {
-            "forwarded": 0, "blocked": 0, "tools_seen": 0,
-            "quarantined": 0, "upgrades": 0, "withheld": 0, "announcements": 0,
-        }
+        self.stats = self.guard.stats
 
     # ---------- plumbing ----------
 
@@ -332,49 +224,16 @@ class WardenProxy:
         self.to_server(message)
 
     def handle_tool_call(self, message: dict) -> None:
-        params = message.get("params") or {}
-        tool_name = params.get("name", "<unnamed>")
-        args = params.get("arguments") or {}
-
-        contract = self.enforcer.registry.get_contract(self.server_name, tool_name)
-
-        if contract is None:
-            # Never advertised in a tools/list we saw. Build a bare contract so
-            # the enforcer can apply its unknown-tool rule rather than crash.
-            contract = ToolContract(
-                server=self.server_name, tool=tool_name, description="", input_schema={}
-            )
-
-        decision = self.enforcer.check(contract, args, agent="mcp-client")
-
-        if decision.allowed:
-            self.stats["forwarded"] += 1
+        allowed, denial = self.guard.judge_tool_call(message)
+        if allowed:
             self.to_server(message)
             return
 
-        # Denied. The call never reaches the server.
-        self.stats["blocked"] += 1
-        log(f"BLOCKED {tool_name}: {decision.reason}")
+        # Refused. The call never reaches the server, and the client gets a
+        # protocol-correct reply saying which rule stopped it.
         with self.lock:
             self.pending.pop(message.get("id"), None)
-
-        self.to_client(
-            {
-                "jsonrpc": "2.0",
-                "id": message.get("id"),
-                "result": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                f"Blocked by Warden [{decision.code}]: {decision.reason}"
-                            ),
-                        }
-                    ],
-                    "isError": True,
-                },
-            }
-        )
+        self.to_client(denial)
 
     # ---------- Warden's own requests ----------
 
@@ -442,17 +301,14 @@ class WardenProxy:
 
         # The server announcing its own tools changed. Look now, do not wait
         # for the client to ask.
-        if message.get("method") == "notifications/tools/list_changed":
+        if MessageGuard.is_list_changed(message):
             self.stats["announcements"] += 1
             self.to_client(message)
             self.refresh_tool_list("server announced tools/list_changed")
             return
 
         if method == "initialize" and "result" in message:
-            info = message["result"].get("serverInfo") or {}
-            version = info.get("version")
-            state = self.enforcer.note_server_version(self.server_name, version)
-            log(f"server reports version {version} ({state})")
+            self.guard.note_initialize(message["result"])
 
         if method == "tools/list" and "result" in message:
             original = message["result"].get("tools") or []
@@ -461,77 +317,8 @@ class WardenProxy:
         self.to_client(message)
 
     def inspect_tool_list(self, tools: list[dict]) -> list[dict]:
-        """
-        Judge every advertised tool, then decide what the client may see.
-
-        Returns the list to forward. This is the part that matters most:
-
-        Tool poisoning does not need the poisoned tool to be called. Its payload
-        is the description, and a description is read into the model's context
-        the moment the tool list arrives. A poisoned description can instruct
-        the model to use a *different*, approved tool to do the damage - so
-        blocking calls to the poisoned tool alone blocks the wrong thing.
-
-        So a quarantined or unapproved tool is withheld from the client. Its
-        description never reaches the model at all.
-        """
-        self.stats["tools_seen"] = len(tools)
-        view = self.enforcer.policy.default("quarantined_tool_view")
-        compat = self.enforcer.policy.default("client_schema_compatibility")
-        visible: list[dict] = []
-        adjusted = 0
-
-        def serve(definition: dict) -> None:
-            nonlocal adjusted
-            cleaned, changed = sanitize_for_client(definition, compat)
-            if changed:
-                adjusted += 1
-            visible.append(cleaned)
-
-        for tool in tools:
-            contract = contract_from_mcp_tool(self.server_name, tool)
-            registry = self.enforcer.registry
-
-            if not registry.is_known(self.server_name, contract.tool):
-                if self.discover:
-                    self.enforcer.approve(contract, reason="discovery mode auto-pin")
-                    log(f"pinned {contract.tool} ({contract.short_fingerprint()})")
-                    serve(tool)
-                else:
-                    self.stats["withheld"] += 1
-                    log(f"WITHHELD unapproved tool {contract.tool} from the client")
-                continue
-
-            decision = self.enforcer.verify_advertised(contract)
-            if decision is not None:
-                if decision.code in ("VERSION_UPGRADE_ACCEPTED", "DRIFT_ACCEPTED"):
-                    self.stats["upgrades"] += 1
-                    log(f"ACCEPTED change on {contract.tool}: {decision.reason}")
-                elif not decision.allowed:
-                    self.stats["quarantined"] += 1
-                    log(f"{decision.code} on {contract.tool}: {decision.reason}")
-                else:
-                    log(f"drift flagged on {contract.tool}: {decision.reason}")
-
-            # Checked after verification, not instead of it: a tool quarantined
-            # in an earlier session stays withheld even if this session's copy
-            # happens to look clean.
-            if registry.is_quarantined(self.server_name, contract.tool):
-                self.stats["withheld"] += 1
-                if view == "pinned":
-                    pinned = registry.get_contract(self.server_name, contract.tool)
-                    serve(mcp_tool_from_contract(pinned))
-                    log(f"serving APPROVED version of quarantined {contract.tool}")
-                else:
-                    log(f"WITHHELD quarantined {contract.tool} from the client")
-                continue
-
-            serve(tool)
-
-        if adjusted:
-            log(f"removed a stale schema dialect from {adjusted} tool(s) so the "
-                f"client will accept them; pinned contracts are unchanged")
-        return visible
+        """Delegated to the shared guard; the transport only moves the bytes."""
+        return self.guard.inspect_tool_list(tools)
 
     # ---------- run loops ----------
 
