@@ -285,5 +285,9 @@ test. `PROGRESS.md` is the build log, including what broke and why.
 
 ## Licence
 
-Not yet chosen. All rights reserved by default. Ask before using this anywhere
-it matters.
+Apache License 2.0. Use it, run it, modify it, ship it inside something
+commercial. The patent grant is the reason this is Apache rather than MIT:
+infrastructure a company puts in its request path should not come with a patent
+question attached.
+
+Copyright remains with the author, so commercial licensing stays possible later.
